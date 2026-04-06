@@ -8,6 +8,7 @@ const mediasourcesRouter = require('./db/mediasources');
 const mediasRouter = require('./db/medias');
 const scanRouter = require('./db/scan');
 const searchRouter = require('./db/search');
+const audiofilesRouter = require('./db/audiofiles');
 
 const app = express();
 const UI_PORT = parseInt(process.env.UI_PORT) || 3000;
@@ -40,6 +41,7 @@ app.use('/db/mediatypes', mediatypesRouter);
 app.use('/db/mediasources', mediasourcesRouter);
 app.use('/db/search', searchRouter);
 app.use('/db/medias', mediasRouter);
+app.use('/db/audiofiles', audiofilesRouter);
 app.use('/scan', scanRouter);
 
 app.listen(EXPRESS_PORT, '127.0.0.1', () => {

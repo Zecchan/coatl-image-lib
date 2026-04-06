@@ -119,6 +119,28 @@ function applySchema(db) {
   // ── Migrations ──────────────────────────────────────────────────────────────
   // ALTER TABLE does not support IF NOT EXISTS; ignore error if column exists.
   try { db.exec('ALTER TABLE medias ADD COLUMN qdrant_indexed_at TEXT DEFAULT NULL'); } catch { }
+  try { db.exec('ALTER TABLE audiofiles ADD COLUMN qdrant_indexed_at TEXT DEFAULT NULL'); } catch { }
+
+  // audiofiles: individual audio tracks within a music collection (type 3)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS audiofiles (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      uid             TEXT    NOT NULL UNIQUE,       -- 16-char random hex
+      media_id        INTEGER NOT NULL REFERENCES medias(id) ON DELETE CASCADE,
+
+      filename        TEXT    NOT NULL,              -- on-disk filename (relative to media folder)
+      title           TEXT    NOT NULL DEFAULT '',   -- display title (user-editable)
+      artist          TEXT    NOT NULL DEFAULT '',   -- track-level artist override
+      album           TEXT    NOT NULL DEFAULT '',
+      track_number    INTEGER          DEFAULT NULL,
+      disc_number     INTEGER          DEFAULT NULL,
+      duration        INTEGER          DEFAULT NULL, -- seconds
+      lyrics          TEXT    NOT NULL DEFAULT '',   -- full lyrics text
+
+      created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+  `);
 }
 
 // ── UID helper ───────────────────────────────────────────────────────────────

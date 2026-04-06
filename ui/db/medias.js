@@ -50,7 +50,7 @@ const SELECT_MEDIA = `
     m.duration, m.track_count,
     m.language, m.notes,
     m.created_at, m.updated_at, m.qdrant_indexed_at,
-    ms.uid  AS mediasourceUid,  ms.name AS mediasourceName,
+    ms.uid  AS mediasourceUid,  ms.name AS mediasourceName, ms.path AS mediasourcePath,
     mt.uid  AS mediatypeUid,    mt.name AS mediatypeName, mt.color AS mediatypeColor, mt.type AS mediatypeType
   FROM medias m
   JOIN mediasources ms ON ms.id = m.mediasource_id

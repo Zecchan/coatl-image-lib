@@ -91,6 +91,18 @@
           <!-- Always shown -->
           <span class="meta-key">Library</span>
           <span class="meta-val">{{ media.mediasourceName }}</span>
+          <template v-if="fullPath">
+            <span class="meta-key">Path</span>
+            <span class="meta-val path-row">
+              <span class="path-text" :title="fullPath">{{ fullPath }}</span>
+              <button class="path-open-btn" title="Copy path" @click="copyPath">
+                <Copy :size="13" />
+              </button>
+              <button class="path-open-btn" title="Open in Explorer" @click="openExplorer">
+                <FolderOpen :size="13" />
+              </button>
+            </span>
+          </template>
           <span class="meta-key">Added</span>
           <span class="meta-val">{{ formatDate(media.created_at) }}</span>
           <span class="meta-key">Embedded</span>
@@ -164,7 +176,7 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import { ImageOff, Pencil } from 'lucide-vue-next'
+import { ImageOff, Pencil, FolderOpen, Copy } from 'lucide-vue-next'
 import MediaEntryForm from './MediaEntryForm.vue'
 
 const props = defineProps({
@@ -179,6 +191,26 @@ const coverUrl = computed(() => {
   if (/^([a-zA-Z]:[/\\]|[/\\])/.test(m.cover)) return `/scan/image?f=${encodeURIComponent(m.cover)}`
   return `/scan/cover/${m.uid}`
 })
+
+const fullPath = computed(() => {
+  const m = props.media
+  if (!m.mediasourcePath || !m.path) return null
+  return (m.mediasourcePath.replace(/[\/\\]+$/, '') + '\\' + m.path.replace(/^[\/\\]+/, '')).replace(/\//g, '\\')
+})
+
+async function copyPath() {
+  if (!fullPath.value) return
+  await navigator.clipboard.writeText(fullPath.value)
+}
+
+async function openExplorer() {
+  if (!fullPath.value) return
+  await fetch('/scan/open-explorer', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: fullPath.value }),
+  })
+}
 
 function formatDate(str) {
   if (!str) return ''
@@ -346,6 +378,14 @@ async function doEdit() {
 .meta-val { color: #9090b0; }
 .link { color: #7c5cbf; text-decoration: none; }
 .link:hover { text-decoration: underline; }
+.path-row { display: flex; align-items: center; gap: .4rem; min-width: 0; }
+.path-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .78rem; font-family: monospace; color: #7070a0; }
+.path-open-btn {
+  background: none; border: none; cursor: pointer; padding: 2px 4px;
+  color: #555570; border-radius: 4px; display: inline-flex; align-items: center;
+  flex-shrink: 0; transition: color .15s;
+}
+.path-open-btn:hover { color: #9b72cf; }
 
 .stars       { font-size: 1.1rem; margin-bottom: .6rem; line-height: 1; }
 

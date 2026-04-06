@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.models import TextRequest, ImageRequest, TagRequest, AnalyzeRequest, IndexRequest, SearchRequest, ImageSearchRequest, VideoIndexRequest
+from app.models import TextRequest, ImageRequest, TagRequest, AnalyzeRequest, IndexRequest, SearchRequest, ImageSearchRequest, VideoIndexRequest, LyricsIndexRequest, TextSearchRequest
 from app.services.clip_service import clip_service
 from app.services.image_service import analyze_image
 from app.services.caption_service import caption_service
 from app.services.tag_service import tag_service
 from app.services.qdrant_service import qdrant_service
+from app.services.text_qdrant_service import text_qdrant_service
 import numpy as np
 
 app = FastAPI()
@@ -119,3 +120,37 @@ def search_by_image(req: ImageSearchRequest):
 @app.get("/qdrant_status")
 def qdrant_status():
     return qdrant_service.collection_info()
+
+
+# INDEX LYRICS / TEXT INTO TEXT QDRANT
+@app.post("/index_lyrics")
+def index_lyrics(req: LyricsIndexRequest):
+    ok = text_qdrant_service.index_lyrics(req.audiofile_uid, req.media_uid, req.text)
+    return {"ok": ok}
+
+
+# REMOVE A SINGLE AUDIOFILE'S TEXT POINT FROM QDRANT
+@app.delete("/index_text/{audiofile_uid}")
+def delete_text(audiofile_uid: str):
+    text_qdrant_service.delete_text(audiofile_uid)
+    return {"deleted": True, "audiofile_uid": audiofile_uid}
+
+
+# REMOVE ALL TEXT POINTS FOR A MEDIA (e.g. music collection deleted)
+@app.delete("/index_text_media/{media_uid}")
+def delete_text_media(media_uid: str):
+    text_qdrant_service.delete_by_media(media_uid)
+    return {"deleted": True, "media_uid": media_uid}
+
+
+# SEMANTIC TEXT SEARCH (lyrics / text)
+@app.post("/search_text")
+def search_text(req: TextSearchRequest):
+    hits = text_qdrant_service.search(req.text, req.limit)
+    return {"results": hits}
+
+
+# TEXT QDRANT COLLECTION STATUS
+@app.get("/text_qdrant_status")
+def text_qdrant_status():
+    return text_qdrant_service.collection_info()

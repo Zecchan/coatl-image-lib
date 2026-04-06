@@ -26,6 +26,9 @@
       <!-- Type 2: Video Collection -->
       <VideoCollectionView v-else-if="media.mediatypeType === 2" :media="media" />
 
+      <!-- Type 3: Music Collection -->
+      <MusicCollectionView v-else-if="media.mediatypeType === 3" :media="media" />
+
       <!-- Fallback for unsupported types -->
       <div v-else class="state-center" style="padding:3rem 0;color:#555570;font-size:.85rem">
         No viewer available for media type "{{ media.mediatypeName }}".
@@ -42,6 +45,7 @@ import { ChevronLeft } from 'lucide-vue-next'
 import MediaHeader from '../components/MediaHeader.vue'
 import ImageCollectionView from '../components/ImageCollectionView.vue'
 import VideoCollectionView from '../components/VideoCollectionView.vue'
+import MusicCollectionView from '../components/MusicCollectionView.vue'
 
 const route  = useRoute()
 const router = useRouter()

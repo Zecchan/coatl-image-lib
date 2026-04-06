@@ -7,11 +7,20 @@
         <label class="field-label">Folder Path <span class="req">*</span></label>
         <input v-model="form.path" type="text" class="field" placeholder="relative to media source root" />
       </div>
-      <!-- Video Collection: cover auto-generated at save time, no need to show the field -->
-      <div v-if="mediatypeType !== 2" class="field-group flex-1">
-        <label class="field-label">Cover Image</label>
-        <input v-model="form.cover" type="text" class="field" placeholder="filename, abs path, or URL" />
-      </div>
+      <!-- Video Collection: cover auto-generated from first frame; Music Collection: optional upload -->
+      <template v-if="mediatypeType !== 2">
+        <div class="field-group flex-1">
+          <label class="field-label">Cover Image</label>
+          <template v-if="mediatypeType === 3">
+            <label class="cover-upload-btn">
+              <input type="file" accept="image/*" style="display:none" @change="onCoverFileChange" />
+              <span>{{ coverFileName || 'Choose image… (optional)' }}</span>
+            </label>
+            <span v-if="coverFileName" style="font-size:.68rem;color:#555570;margin-top:.2rem">Will be saved as cover.jpg</span>
+          </template>
+          <input v-else v-model="form.cover" type="text" class="field" placeholder="filename, abs path, or URL" />
+        </div>
+      </template>
     </div>
   </template>
   <template v-else>
@@ -19,8 +28,8 @@
     <div class="modal-row">
       <div class="field-group flex-1">
         <label class="field-label">Cover Image</label>
-        <!-- Video: file upload; will be saved as cover.jpg on the server -->
-        <template v-if="mediatypeType === 2">
+        <!-- Video / Music: file upload; will be saved as cover.jpg on the server -->
+        <template v-if="mediatypeType === 2 || mediatypeType === 3">
           <label class="cover-upload-btn">
             <input type="file" accept="image/*" style="display:none" @change="onCoverFileChange" />
             <span>{{ coverFileName || 'Choose image…' }}</span>
@@ -184,7 +193,7 @@ function onCoverFileChange(event) {
 }
 
 // Artist and circle/series labels vary by media type
-const artistLabel = computed(() => props.mediatypeType === 1 ? 'Artist' : 'Author')
+const artistLabel = computed(() => (props.mediatypeType === 1 || props.mediatypeType === 3) ? 'Artist' : 'Author')
 const circleLabel = computed(() => props.mediatypeType === 1 ? 'Circle' : 'Series')
 
 const newTagInput = ref('')

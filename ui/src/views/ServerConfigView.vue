@@ -49,8 +49,14 @@
         </div>
       </div>
       <div class="field-row">
-        <label class="field-label">Collection Name</label>
+        <label class="field-label">Image Collection Name</label>
         <input v-model="form.qdrant.collectionName" type="text" class="field" placeholder="coatl_images" />
+        <span class="field-hint">Used for image/video CLIP embeddings (512-dim).</span>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Text Collection Name</label>
+        <input v-model="form.qdrant.textCollectionName" type="text" class="field" placeholder="coatl_text" />
+        <span class="field-hint">Used for lyrics/text embeddings (384-dim). Changing requires Python API restart.</span>
       </div>
       <div class="note-box">
         <Info :size="13" style="flex-shrink:0;margin-top:2px" />
@@ -94,7 +100,7 @@ import {
 const form = reactive({
   site:   { title: '' },
   sqlite: { path: '' },
-  qdrant: { host: '', port: 6333, collectionName: '' },
+  qdrant: { host: '', port: 6333, collectionName: '', textCollectionName: '' },
 })
 
 const toast = reactive({ visible: false, msg: '', type: 'ok' })
@@ -111,9 +117,10 @@ async function loadConfig() {
     const cfg = await fetch('/config').then(r => r.json())
     form.site.title            = cfg.site?.title            || ''
     form.sqlite.path           = cfg.sqlite?.path           || ''
-    form.qdrant.host           = cfg.qdrant?.host           || ''
-    form.qdrant.port           = cfg.qdrant?.port           ?? 6333
-    form.qdrant.collectionName = cfg.qdrant?.collectionName || ''
+    form.qdrant.host               = cfg.qdrant?.host               || ''
+    form.qdrant.port               = cfg.qdrant?.port               ?? 6333
+    form.qdrant.collectionName     = cfg.qdrant?.collectionName     || ''
+    form.qdrant.textCollectionName = cfg.qdrant?.textCollectionName || ''
   } catch (e) {
     showToast('Failed to load config: ' + e.message, 'err')
   }
@@ -126,7 +133,8 @@ async function saveConfig() {
     qdrant: {
       host:           form.qdrant.host.trim()           || '127.0.0.1',
       port:           Number(form.qdrant.port)          || 6333,
-      collectionName: form.qdrant.collectionName.trim() || 'coatl_images',
+      collectionName:     form.qdrant.collectionName.trim()     || 'coatl_images',
+      textCollectionName: form.qdrant.textCollectionName.trim() || 'coatl_text',
     },
   }
   try {

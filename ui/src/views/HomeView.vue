@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div style="max-width:1600px;margin:0 auto;padding:1.5rem 1.25rem">
 
     <!-- Search bar -->
@@ -28,10 +28,10 @@
           <option :value="25">25 / page</option>
           <option :value="50">50 / page</option>
         </select>
-        <button class="adv-toggle" :class="{ 'adv-active': hasFilters }" @click="advancedOpen = !advancedOpen">
+        <button class="filter-toggle" :class="{ 'filter-active': hasFilters }" @click="filterOpen = !filterOpen">
           <SlidersHorizontal :size="13" />
           Filters
-          <ChevronDown :size="12" :style="{ transform: advancedOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .2s' }" />
+          <ChevronDown :size="12" :style="{ transform: filterOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .2s' }" />
         </button>
       </div>
       <p v-if="searchMode === 'keyword'" style="margin:.6rem 0 0 1.6rem;font-size:.72rem;color:#404055">
@@ -78,11 +78,11 @@
       </template>
 
       <!-- Advanced filters panel -->
-      <div v-show="advancedOpen" class="adv-panel">
+      <div v-show="filterOpen" class="filter-panel">
         <!-- Media type -->
-        <div class="adv-row">
-          <span class="adv-label">Media type</span>
-          <div class="adv-pills">
+        <div class="filter-row">
+          <span class="filter-label">Media type</span>
+          <div class="filter-pills">
             <button
               v-for="mt in mediatypes" :key="mt.uid"
               class="mt-pill"
@@ -98,14 +98,14 @@
         </div>
 
         <!-- Max content rating -->
-        <div class="adv-row">
-          <span class="adv-label">Max rating</span>
-          <div class="adv-pills">
+        <div class="filter-row">
+          <span class="filter-label">Max rating</span>
+          <div class="filter-pills">
             <button
               v-for="(r, i) in RATINGS" :key="r.key"
               class="rating-btn"
               :style="RATING_ORDER.indexOf(maxRating) >= i ? r.activeStyle : ''"
-              @click="maxRating = r.key"
+              @click="maxRating = r.key; saveFilterCookie()"
             >{{ r.label }}</button>
           </div>
         </div>
@@ -153,10 +153,11 @@
         <!-- Info -->
         <div class="card-body">
           <div class="card-title" :title="m.title">{{ m.title }}</div>
-          <div v-if="m.artist" class="card-sub" :title="m.artist">{{ m.artist }}</div>
+          <div v-if="m.matchedTrack" class="card-sub card-matched-track" :title="m.matchedTrack">â™ª {{ m.matchedTrack }}</div>
+          <div v-else-if="m.artist" class="card-sub" :title="m.artist">{{ m.artist }}</div>
           <!-- Quality score stars -->
           <div v-if="m.rating" class="card-stars">
-            <span v-for="s in 5" :key="s" :style="s <= m.rating ? 'color:#f0c040' : 'color:#2a2a3a'">★</span>
+            <span v-for="s in 5" :key="s" :style="s <= m.rating ? 'color:#f0c040' : 'color:#2a2a3a'">â˜…</span>
           </div>
           <!-- Top 3 tags -->
           <div v-if="m.tags?.length" class="card-tags">
@@ -200,7 +201,7 @@ import { Search, Images, SlidersHorizontal, ChevronDown, Zap, ImagePlus, X } fro
 const route  = useRoute()
 const router = useRouter()
 
-// ── Search / page state ───────────────────────────────────────────────────────
+// â”€â”€ Search / page state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const searchText = ref('')
 const medias     = ref([])
 const total      = ref(0)
@@ -209,16 +210,16 @@ const pageSize   = ref(25)
 const emptyTitle = ref('No media indexed yet')
 const emptyMsg   = ref('Go to <a href="/admin">Administration</a> to index your image folders.')
 
-// ── Search mode ───────────────────────────────────────────────────────────────
+// â”€â”€ Search mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const searchMode  = ref('keyword') // 'keyword' | 'semantic'
 const semanticSub = ref('text')    // 'text' | 'image'
 const isSemantic  = computed(() => searchMode.value === 'semantic')
 
-// ── Image query state ──────────────────────────────────────────────────────
+// â”€â”€ Image query state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // queryImage: { preview (data URL), base64 (pure b64 of resized blob), name, sizeLabel }
 const queryImage = ref(null)
 
-const MAX_DIM = 512 // px — CLIP only needs 224 but 512 gives a safe margin
+const MAX_DIM = 512 // px â€” CLIP only needs 224 but 512 gives a safe margin
 
 function resizeAndEncode(file) {
   return new Promise((resolve, reject) => {
@@ -272,8 +273,30 @@ function setSemanticSub(sub) {
   queryImage.value = null
 }
 
-// ── Advanced filter state (pending — only applied on Search) ──────────────────
-const advancedOpen          = ref(false)
+// â”€â”€ Filter cookie persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const FILTER_COOKIE = 'coatl_filters'
+const COOKIE_MAX_AGE = 365 * 24 * 3600 // 1 year
+
+function saveFilterCookie() {
+  const val = JSON.stringify({
+    mediatypeUids: selectedMediatypeUids.value,
+    maxRating: maxRating.value,
+  })
+  document.cookie = `${FILTER_COOKIE}=${encodeURIComponent(val)};max-age=${COOKIE_MAX_AGE};path=/`
+}
+
+function loadFilterCookie() {
+  const entry = document.cookie.split(';').map(s => s.trim()).find(s => s.startsWith(FILTER_COOKIE + '='))
+  if (!entry) return
+  try {
+    const data = JSON.parse(decodeURIComponent(entry.slice(FILTER_COOKIE.length + 1)))
+    if (Array.isArray(data.mediatypeUids)) selectedMediatypeUids.value = data.mediatypeUids
+    if (data.maxRating && RATING_ORDER.includes(data.maxRating)) maxRating.value = data.maxRating
+  } catch { /* ignore corrupt cookie */ }
+}
+
+// â”€â”€ Advanced filter state (pending â€” only applied on Search) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const filterOpen          = ref(false)
 const mediatypes            = ref([])
 const selectedMediatypeUids = ref([])
 const maxRating             = ref('explicit')
@@ -295,9 +318,10 @@ function toggleMediatype(uid) {
   const idx = selectedMediatypeUids.value.indexOf(uid)
   if (idx === -1) selectedMediatypeUids.value.push(uid)
   else selectedMediatypeUids.value.splice(idx, 1)
+  saveFilterCookie()
 }
 
-// ── Active query (what the backend is currently showing) ──────────────────────
+// â”€â”€ Active query (what the backend is currently showing) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Captured from the form on Search click; page navigation reuses it.
 const activeQuery = ref({ q: '', mediatypeUids: [], maxRating: 'explicit' })
 
@@ -329,10 +353,10 @@ const resultsLabel = computed(() => {
   if (!total.value) return ''
   const start = (page.value - 1) * pageSize.value + 1
   const end   = Math.min(page.value * pageSize.value, total.value)
-  return `${start}–${end} of ${total.value} entr${total.value !== 1 ? 'ies' : 'y'}`
+  return `${start}â€“${end} of ${total.value} entr${total.value !== 1 ? 'ies' : 'y'}`
 })
 
-// ── Data fetching ─────────────────────────────────────────────────────────────
+// â”€â”€ Data fetching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function runFetch() {
   const aq = activeQuery.value
   const p  = new URLSearchParams()
@@ -471,6 +495,7 @@ function clearSearch() {
   selectedMediatypeUids.value = []
   maxRating.value             = 'explicit'
   activeQuery.value           = { q: '', mediatypeUids: [], maxRating: 'explicit' }
+  saveFilterCookie()
   page.value                  = 1
   queryImage.value            = null
   if (isSemantic.value) {
@@ -500,6 +525,11 @@ onMounted(async () => {
     const res = await fetch('/db/mediatypes')
     mediatypes.value = res.ok ? await res.json() : []
   } catch { mediatypes.value = [] }
+  loadFilterCookie()
+  // Sync activeQuery so the initial fetch respects cookie-loaded filters
+  activeQuery.value = { q: '', mediatypeUids: [...selectedMediatypeUids.value], maxRating: maxRating.value }
+  // Open the filter panel if filters are active so user can see them
+  if (hasFilters.value) filterOpen.value = true
   // If we were navigated here with ?q= (e.g. from tag click in MediaView), pre-fill and search
   if (route.query.q) {
     searchText.value = route.query.q
@@ -521,10 +551,10 @@ function clickTag(name, e) {
 }
 
 // Resolve the correct src for a media cover:
-// - HTTP/FTP URL  → use directly
-// - absolute path → /scan/image?f=<path>  (server validates extension)
-// - relative name → /scan/cover/:uid      (server joins sourcePath + mediaPath + cover)
-// - empty         → null (placeholder shown)
+// - HTTP/FTP URL  â†’ use directly
+// - absolute path â†’ /scan/image?f=<path>  (server validates extension)
+// - relative name â†’ /scan/cover/:uid      (server joins sourcePath + mediaPath + cover)
+// - empty         â†’ null (placeholder shown)
 function coverSrc(m) {
   if (!m.cover) return null
   if (/^(https?|ftp):\/\//i.test(m.cover)) return m.cover
@@ -600,6 +630,7 @@ code { background: #1e1e30; border-radius: 3px; padding: 0 .35em; font-size: .88
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   margin-bottom: .25rem;
 }
+.card-matched-track { color: #9b72cf; }
 .card-stars { font-size: .85rem; margin-bottom: .3rem; line-height: 1; }
 
 /* Tags */
@@ -636,26 +667,26 @@ code { background: #1e1e30; border-radius: 3px; padding: 0 .35em; font-size: .88
 .page-ellipsis { color: #444460; font-size: .82rem; padding: 0 .1rem; line-height: 1.9rem; }
 
 /* Advanced filters toggle */
-.adv-toggle {
+.filter-toggle {
   display: inline-flex; align-items: center; gap: .35rem;
   background: #181820; border: 1px solid #252535; border-radius: 6px;
   color: #666680; font-size: .75rem; padding: .28rem .65rem;
   cursor: pointer; white-space: nowrap; flex-shrink: 0;
   transition: border-color .15s, color .15s;
 }
-.adv-toggle:hover  { border-color: #7c5cbf; color: #a0a0c0; }
-.adv-active        { border-color: #7c5cbf !important; color: #b090f0 !important; }
+.filter-toggle:hover  { border-color: #7c5cbf; color: #a0a0c0; }
+.filter-active        { border-color: #7c5cbf !important; color: #b090f0 !important; }
 
 /* Advanced panel */
-.adv-panel {
+.filter-panel {
   margin-top: .9rem;
   padding-top: .85rem;
   border-top: 1px solid #1e1e2e;
   display: flex; flex-direction: column; gap: .65rem;
 }
-.adv-row   { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
-.adv-label { font-size: .72rem; color: #484860; min-width: 6rem; flex-shrink: 0; }
-.adv-pills { display: flex; flex-wrap: wrap; gap: .4rem; }
+.filter-row   { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.filter-label { font-size: .72rem; color: #484860; min-width: 6rem; flex-shrink: 0; }
+.filter-pills { display: flex; flex-wrap: wrap; gap: .4rem; }
 
 /* Mediatype pill */
 .mt-pill {
@@ -736,3 +767,4 @@ code { background: #1e1e30; border-radius: 3px; padding: 0 .35em; font-size: .88
   background: #1a1535cc; color: #b090f0; border: 1px solid #7c5cbf55;
 }
 </style>
+

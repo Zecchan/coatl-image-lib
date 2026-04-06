@@ -46,12 +46,24 @@
     <!-- Results -->
     <template v-if="result">
       <p class="results-meta">
-        Found <strong>{{ result.total }}</strong> {{ result.isVideo ? 'video' : 'image' }}{{ result.total === 1 ? '' : 's' }} in
+        Found <strong>{{ result.total }}</strong>
+        {{ result.isAudio ? 'audio file' : result.isVideo ? 'video' : 'image' }}{{ result.total === 1 ? '' : 's' }} in
         <code>{{ result.dir }}</code>
-        <span v-if="result.total > 12"> — showing {{ result.samples.length }} samples</span>
+        <span v-if="!result.isAudio && result.total > 12"> — showing {{ result.samples.length }} samples</span>
       </p>
 
-      <div v-if="result.samples.length" class="preview-grid">
+      <!-- Audio file list -->
+      <div v-if="result.isAudio && result.samples.length" class="audio-file-list">
+        <div v-for="f in result.samples" :key="f.name" class="audio-file-row">
+          <span class="audio-file-name">{{ f.name }}</span>
+        </div>
+        <div v-if="result.total > result.samples.length" class="audio-file-more">
+          … and {{ result.total - result.samples.length }} more
+        </div>
+      </div>
+
+      <!-- Image/video grid -->
+      <div v-else-if="!result.isAudio && result.samples.length" class="preview-grid">
         <div v-for="(img, i) in result.samples" :key="img.abs" class="preview-item">
           <div class="preview-img-wrap">
             <img :src="imgUrl(img.abs)" :alt="img.name" class="preview-img" loading="lazy" />
@@ -61,10 +73,10 @@
         </div>
       </div>
 
-      <p v-else class="empty-hint">No {{ result.isVideo ? 'videos' : 'images' }} found in that path.</p>
+      <p v-else class="empty-hint">No {{ result.isAudio ? 'audio files' : result.isVideo ? 'videos' : 'images' }} found in that path.</p>
 
-      <!-- Tagging analysis -->
-      <div v-if="tagging" class="analysis-card" style="margin-top:1.25rem">
+      <!-- Tagging analysis (images/video only) -->
+      <div v-if="!result.isAudio && tagging" class="analysis-card" style="margin-top:1.25rem">
         <div style="display:flex;align-items:center;gap:.5rem;color:#555570;font-size:.82rem">
           <RotateCw :size="13" class="spin" />
           Analyzing {{ result.samples.length }} samples with WD14…
@@ -113,7 +125,7 @@
           <button class="icon-close" :disabled="saveModal.saving" @click="saveModal.saving || (saveModal.open = false)">✕</button>
         </div>
         <div class="save-modal-body">
-          <MediaEntryForm :form="saveModal.form" :mediatypeType="selectedSourceType" :show-path="true" />
+          <MediaEntryForm :form="saveModal.form" :mediatypeType="selectedSourceType" :show-path="true" @cover-file="f => saveModal.coverFile = f" />
           <div v-if="saveModal.error" class="error-msg" style="margin-top:.75rem">{{ saveModal.error }}</div>
         </div>
 
@@ -122,7 +134,7 @@
             <input type="checkbox" v-model="saveModal.moveContent" :disabled="saveModal.saving" />
             Move content
           </label>
-          <button class="btn-secondary" :disabled="saveModal.saving" @click="saveModal.saving || (saveModal.open = false)">Cancel</button>
+          <button class="btn-secondary" :disabled="saveModal.saving" @click="saveModal.saving || (saveModal.open = false, saveModal.coverFile = null)">Cancel</button>
           <button class="btn-primary" :disabled="saveModal.saving" @click="doSave">
             {{ saveModal.saving ? 'Saving…' : 'Save Entry' }}
           </button>
@@ -137,7 +149,7 @@
 import { ref, computed, onMounted, reactive } from 'vue'
 import { ChevronLeft, ChevronDown, FolderOpen, Search, RotateCw, Save } from 'lucide-vue-next'
 import { API_BASE } from '../api.js'
-import { MEDIA_TYPE_IMAGE_COLLECTION, MEDIA_TYPE_VIDEO_COLLECTION } from '../mediatypeEnum.js'
+import { MEDIA_TYPE_IMAGE_COLLECTION, MEDIA_TYPE_VIDEO_COLLECTION, MEDIA_TYPE_MUSIC_COLLECTION } from '../mediatypeEnum.js'
 import MediaEntryForm from '../components/MediaEntryForm.vue'
 
 const sources           = ref([])
@@ -160,6 +172,7 @@ const saveEnabled = computed(() =>
 
 const saveModal = reactive({
   open: false, saving: false, error: '', moveContent: true,
+  coverFile: null,
   form: defaultForm(),
 })
 
@@ -218,7 +231,8 @@ async function load() {
     if (!res.ok) { error.value = data.error || 'Scan failed.'; return }
     result.value = data
     loadedDir.value = scanPath.value.trim()
-    if (data.samples.length) runTagging(data.samples)
+    // Skip WD14 tagging for non-image types
+    if (data.samples.length && !data.isAudio) runTagging(data.samples)
   } catch (e) {
     error.value = e.message
   } finally {
@@ -305,11 +319,12 @@ function openSave() {
     ? Object.entries(tagResult.value.ratings).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'general'
     : 'general'
 
-  // Cover: for video collections the server will extract cover.jpg at save time;
-  // for image collections use the first sample filename.
+  // Cover: video → auto-generated; music → blank (user may optionally upload); image → first sample
   const cover = selectedSourceType.value === MEDIA_TYPE_VIDEO_COLLECTION
     ? 'cover.jpg'
-    : (result.value?.samples?.[0]?.name ?? '')
+    : selectedSourceType.value === MEDIA_TYPE_MUSIC_COLLECTION
+      ? ''
+      : (result.value?.samples?.[0]?.name ?? '')
 
   // Pre-fill tags from analysis (top 40)
   const tags = [
@@ -321,7 +336,7 @@ function openSave() {
   const page_count = selectedSourceType.value === MEDIA_TYPE_IMAGE_COLLECTION
     ? (result.value?.total ?? null)
     : null
-  const track_count = selectedSourceType.value === MEDIA_TYPE_VIDEO_COLLECTION
+  const track_count = (selectedSourceType.value === MEDIA_TYPE_VIDEO_COLLECTION || selectedSourceType.value === MEDIA_TYPE_MUSIC_COLLECTION)
     ? (result.value?.total ?? null)
     : null
 
@@ -335,8 +350,8 @@ function openSave() {
 
 async function doSave() {
   if (!saveModal.form.title.trim()) { saveModal.error = 'Title is required.'; return }
-  if ((selectedSourceType.value === 1 || selectedSourceType.value === 2) && !saveModal.form.artist?.trim() && !saveModal.form.series?.trim()) {
-    saveModal.error = `Artist or Circle/Series is required for ${selectedSourceType.value === 1 ? 'Image' : 'Video'} Collection.`; return
+  if ((selectedSourceType.value === MEDIA_TYPE_IMAGE_COLLECTION || selectedSourceType.value === MEDIA_TYPE_VIDEO_COLLECTION) && !saveModal.form.artist?.trim() && !saveModal.form.series?.trim()) {
+    saveModal.error = `Artist or Circle/Series is required for ${selectedSourceType.value === MEDIA_TYPE_IMAGE_COLLECTION ? 'Image' : 'Video'} Collection.`; return
   }
   saveModal.saving = true
   saveModal.error  = ''
@@ -354,7 +369,23 @@ async function doSave() {
     })
     const data = await res.json()
     if (!res.ok) { saveModal.error = data.error || 'Save failed.'; return }
+
+    // If user chose a cover image (music create), upload it now
+    if (saveModal.coverFile) {
+      try {
+        const uploadRes = await fetch(`/db/medias/${data.uid}/cover`, {
+          method: 'POST',
+          headers: { 'Content-Type': saveModal.coverFile.type || 'application/octet-stream' },
+          body: saveModal.coverFile,
+        })
+        if (!uploadRes.ok) console.warn('[cover] upload failed:', uploadRes.status)
+      } catch (e) {
+        console.warn('[cover] upload error:', e.message)
+      }
+    }
+
     saveModal.open  = false
+    saveModal.coverFile = null
     // Reset scan state — folder has moved, old path is no longer valid
     result.value    = null
     tagResult.value = null
@@ -448,6 +479,20 @@ onMounted(loadSources)
 }
 
 .empty-hint { text-align: center; padding: 3rem 1rem; font-size: .85rem; color: #404055; }
+
+.audio-file-list {
+  background: #0e0e18; border: 1px solid #1e1e2e; border-radius: 8px;
+  max-height: 320px; overflow-y: auto; margin-bottom: 1rem;
+}
+.audio-file-row {
+  padding: .4rem .9rem; border-bottom: 1px solid #111118;
+  font-size: .8rem; color: #9090b0; font-family: monospace;
+}
+.audio-file-row:last-child { border-bottom: none; }
+.audio-file-name { word-break: break-all; }
+.audio-file-more {
+  padding: .4rem .9rem; font-size: .75rem; color: #555570; font-style: italic;
+}
 
 .analysis-card {
   background: #181820; border: 1px solid #252535; border-radius: 12px;

@@ -10,6 +10,7 @@ const { getDb, uid } = require('./schema');
 
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif', '.avif']);
 const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.webm', '.avi', '.mov', '.wmv', '.flv', '.m4v', '.ts', '.m2ts']);
+const AUDIO_EXTS = new Set(['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.opus', '.wma']);
 
 // Walk directory recursively, collect absolute paths of files matching extSet, sorted by path.
 function walkFiles(dir, extSet) {
@@ -30,6 +31,7 @@ function walkFiles(dir, extSet) {
 
 function walkImages(dir) { return walkFiles(dir, IMAGE_EXTS); }
 function walkVideos(dir) { return walkFiles(dir, VIDEO_EXTS); }
+function walkAudios(dir) { return walkFiles(dir, AUDIO_EXTS); }
 
 // Returns first image + up to (n-1) random samples from the rest, total <= n.
 function sampleImages(files, n) {
@@ -213,6 +215,80 @@ function indexVideoCollection(newUid, destDir) {
   }).catch(e => console.warn('[qdrant] index_video failed:', e.message));
 }
 
+/**
+ * Scan audio files in destDir, insert rows into audiofiles table for each track.
+ * Filename stem is used as the default title.
+ */
+function populateAudiofiles(mediaUid, destDir) {
+  const db = getDb();
+  const media = db.prepare('SELECT id, title, artist FROM medias WHERE uid = ?').get(mediaUid);
+  if (!media) return;
+
+  // Detect disc subfolders: "Disc 1", "Disk 2", "CD1", "01", "1", etc.
+  const DISC_RE = /^(?:disc|disk|cd)\s*(\d+)$|^(\d+)$/i;
+  const discDirs = [];
+  try {
+    for (const e of fs.readdirSync(destDir, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue;
+      const m = DISC_RE.exec(e.name);
+      if (m) discDirs.push({ num: parseInt(m[1] || m[2], 10), absPath: path.join(destDir, e.name) });
+    }
+  } catch { /* ignore */ }
+
+  // Build track entries with per-disc track numbering when disc folders found.
+  const trackEntries = []; // [{ absPath, trackNum, discNum }]
+  if (discDirs.length > 0) {
+    discDirs.sort((a, b) => a.num - b.num);
+    for (const disc of discDirs) {
+      walkAudios(disc.absPath).forEach((f, i) =>
+        trackEntries.push({ absPath: f, trackNum: i + 1, discNum: disc.num }));
+    }
+  } else {
+    walkAudios(destDir).forEach((f, i) =>
+      trackEntries.push({ absPath: f, trackNum: i + 1, discNum: 1 }));
+  }
+
+  if (!trackEntries.length) {
+    console.log(`[audiofiles] No audio files found in ${destDir}`);
+    return;
+  }
+
+  const ins = db.prepare(`
+    INSERT OR IGNORE INTO audiofiles (uid, media_id, filename, title, track_number, disc_number, album, artist, duration)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  // Gather durations outside the transaction (ffprobe calls can be slow)
+  const withDurations = trackEntries.map(e => ({
+    ...e,
+    duration: (() => { try { return getVideoDuration(e.absPath); } catch { return null; } })()
+  }));
+  withDurations.forEach(e => {
+    const name = path.basename(e.absPath);
+    if (e.duration != null) console.log(`[audiofiles] duration ${name}: ${e.duration}s`);
+    else console.warn(`[audiofiles] duration unknown for ${name} (ffprobe failed?)`);
+  });
+
+  let count = 0;
+  const insertMany = db.transaction(() => {
+    for (const { absPath, trackNum, discNum, duration } of withDurations) {
+      const filename = path.relative(destDir, absPath).replace(/\\/g, '/');
+      const stem = path.basename(absPath, path.extname(absPath));
+      ins.run(uid(), media.id, filename, stem, trackNum, discNum, media.title || '', media.artist || '', duration || null);
+      count++;
+    }
+  });
+
+  try {
+    insertMany();
+    // Update track_count
+    db.prepare('UPDATE medias SET track_count = ? WHERE uid = ?').run(count, mediaUid);
+    console.log(`[audiofiles] Inserted ${count} track(s) for media uid=${mediaUid}`);
+  } catch (e) {
+    console.error('[audiofiles] populate failed:', e.message);
+  }
+}
+
 const router = Router();
 
 // Slugify a name for use as a filesystem path segment.
@@ -279,11 +355,28 @@ function previewVideoCollection(req, res) {
   res.json({ total: all.length, dir: absDir, samples, tempDir, isVideo: true });
 }
 
+function previewAudioCollection(req, res) {
+  const { dir } = req.body;
+  const absDir = path.resolve(dir);
+  let stat;
+  try { stat = fs.statSync(absDir); } catch { return res.status(404).json({ error: 'Directory not found' }); }
+  if (!stat.isDirectory()) return res.status(400).json({ error: 'Path is not a directory' });
+
+  const all = walkAudios(absDir);
+  // Return first 50 filenames as samples (no images to preview)
+  const samples = all.slice(0, 50).map(f => ({
+    name: path.relative(absDir, f).replace(/\\/g, '/'),
+    abs: f,
+  }));
+  res.json({ total: all.length, dir: absDir, samples, isAudio: true });
+}
+
 router.post('/preview', (req, res) => {
   const { dir, mediatypeType } = req.body ?? {};
   if (!dir || typeof dir !== 'string') return res.status(400).json({ error: 'dir is required' });
   switch (mediatypeType) {
     case 2: return previewVideoCollection(req, res);
+    case 3: return previewAudioCollection(req, res);
     case 1:
     default: return previewImageCollection(req, res);
   }
@@ -473,23 +566,23 @@ router.get('/video/:uid/*', (req, res) => {
   if (rangeHeader) {
     const [startStr, endStr] = rangeHeader.replace('bytes=', '').split('-');
     const start = parseInt(startStr, 10);
-    const end   = endStr ? parseInt(endStr, 10) : fileSize - 1;
+    const end = endStr ? parseInt(endStr, 10) : fileSize - 1;
     if (start >= fileSize || end >= fileSize) {
       return res.status(416).header('Content-Range', `bytes */${fileSize}`).end();
     }
     const chunkSize = end - start + 1;
     res.writeHead(206, {
-      'Content-Range':  `bytes ${start}-${end}/${fileSize}`,
-      'Accept-Ranges':  'bytes',
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
       'Content-Length': chunkSize,
-      'Content-Type':   contentType,
+      'Content-Type': contentType,
     });
     fs.createReadStream(absFile, { start, end }).pipe(res);
   } else {
     res.writeHead(200, {
       'Content-Length': fileSize,
-      'Content-Type':   contentType,
-      'Accept-Ranges':  'bytes',
+      'Content-Type': contentType,
+      'Accept-Ranges': 'bytes',
     });
     fs.createReadStream(absFile).pipe(res);
   }
@@ -542,10 +635,81 @@ router.get('/file/:uid/*', (req, res) => {
   res.sendFile(absFile);
 });
 
+// GET /audio/:uid/* — streams an audio file with Range support
+router.get('/audio/:uid/*', (req, res) => {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT m.path AS mediaPath, ms.path AS sourcePath
+    FROM medias m
+    JOIN mediasources ms ON ms.id = m.mediasource_id
+    WHERE m.uid = ?
+  `).get(req.params.uid);
+  if (!row) return res.status(404).end();
+
+  const rel = req.params[0] || '';
+  const absDir = path.resolve(path.join(row.sourcePath, row.mediaPath));
+  const absFile = path.resolve(path.join(absDir, rel));
+
+  // Path traversal guard
+  if (!absFile.startsWith(absDir + path.sep) && absFile !== absDir) return res.status(403).end();
+  if (!AUDIO_EXTS.has(path.extname(absFile).toLowerCase())) return res.status(400).end();
+
+  let stat;
+  try { stat = fs.statSync(absFile); } catch { return res.status(404).end(); }
+
+  const fileSize = stat.size;
+  const ext = path.extname(absFile).toLowerCase();
+  const AUDIO_MIME = {
+    '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.ogg': 'audio/ogg',
+    '.wav': 'audio/wav', '.aac': 'audio/aac', '.m4a': 'audio/mp4',
+    '.opus': 'audio/ogg', '.wma': 'audio/x-ms-wma',
+  };
+  const contentType = AUDIO_MIME[ext] || 'application/octet-stream';
+  const rangeHeader = req.headers['range'];
+
+  if (rangeHeader) {
+    const [startStr, endStr] = rangeHeader.replace('bytes=', '').split('-');
+    const start = parseInt(startStr, 10);
+    const end = endStr ? parseInt(endStr, 10) : fileSize - 1;
+    if (start >= fileSize || end >= fileSize) {
+      return res.status(416).header('Content-Range', `bytes */${fileSize}`).end();
+    }
+    const chunkSize = end - start + 1;
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': chunkSize,
+      'Content-Type': contentType,
+    });
+    fs.createReadStream(absFile, { start, end }).pipe(res);
+  } else {
+    res.writeHead(200, {
+      'Content-Length': fileSize,
+      'Content-Type': contentType,
+      'Accept-Ranges': 'bytes',
+    });
+    fs.createReadStream(absFile).pipe(res);
+  }
+});
+
 // POST /scan/save
 // Saves a media entry to the DB and moves the scanned folder into the
 // canonical location: <mediasource_path>/<artist_slug>/<title_slug>
 const CONTENT_RATINGS = new Set(['general', 'sensitive', 'questionable', 'explicit']);
+
+// POST /scan/open-explorer  { path }
+// Spawn Windows Explorer at the given absolute path (fire-and-forget).
+router.post('/open-explorer', (req, res) => {
+  const { path: reqPath } = req.body ?? {};
+  if (!reqPath) return res.status(400).json({ error: 'path is required' });
+  const absPath = path.resolve(reqPath);
+  try {
+    require('child_process').spawn('explorer.exe', [absPath], { detached: true, stdio: 'ignore' }).unref();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 router.post('/save', (req, res) => {
   const { mediasourceUid, scanDir, form, moveContent = true } = req.body ?? {};
@@ -570,6 +734,9 @@ router.post('/save', (req, res) => {
         error: `Artist or Circle/Series is required for ${source.mediatype_type === 1 ? 'Image' : 'Video'} Collection`,
       });
   }
+
+  // Music collections: compute path from artist+title (artist optional)
+  // Image/Video: artist or series required (validated above)
 
   // Compute canonical destination path
   const artistOrCircle = (form.artist?.trim() || form.series?.trim() || '');
@@ -680,6 +847,9 @@ router.post('/save', (req, res) => {
       // Generate thumbnails first (synchronous, but happens after response)
       try { generateVideoThumbnails(destDir, { force: true }); } catch (e) { console.warn('[thumbnails] failed:', e.message); }
       indexVideoCollection(newUid, destDir);
+      break;
+    case 3:
+      populateAudiofiles(newUid, destDir);
       break;
   }
 });

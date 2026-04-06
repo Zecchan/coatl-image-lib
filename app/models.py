@@ -38,3 +38,14 @@ class ImageSearchRequest(BaseModel):
 class VideoIndexRequest(BaseModel):
     media_uid: str
     video_paths: List[str]
+
+
+class LyricsIndexRequest(BaseModel):
+    audiofile_uid: str
+    media_uid: str
+    text: str
+
+
+class TextSearchRequest(BaseModel):
+    text: str
+    limit: Optional[int] = 20

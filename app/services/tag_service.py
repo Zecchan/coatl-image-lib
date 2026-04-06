@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pandas as pd
 from PIL import Image
@@ -8,10 +9,17 @@ MODEL_REPO = "SmilingWolf/wd-vit-tagger-v3"
 TARGET_SIZE = 448
 DEFAULT_THRESHOLD = 0.35
 
-# Tag categories in selected_tags.csv
 CATEGORY_RATING = 9
 CATEGORY_GENERAL = 0
 CATEGORY_CHARACTER = 4
+
+_EP_ENV = os.environ.get("ORT_PROVIDER", "dml").lower()
+if _EP_ENV == "cuda":
+    PROVIDERS = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+elif _EP_ENV == "cpu":
+    PROVIDERS = ["CPUExecutionProvider"]
+else:  # dml (default)
+    PROVIDERS = ["DmlExecutionProvider", "CPUExecutionProvider"]
 
 
 class TagService:
@@ -21,7 +29,7 @@ class TagService:
 
         self.session = ort.InferenceSession(
             model_path,
-            providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+            providers=PROVIDERS,
         )
         self.input_name = self.session.get_inputs()[0].name
         self.tags_df = pd.read_csv(tags_path)

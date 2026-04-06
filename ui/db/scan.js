@@ -338,6 +338,163 @@ router.get('/cover/:uid', (req, res) => {
   res.sendFile(path.resolve(absPath));
 });
 
+/**
+ * Generate thumbnails for all videos in destDir.
+ * Thumbnails are saved to <destDir>/thumbnails/<videobasename>.jpg
+ * Existing thumbnails are skipped unless force=true.
+ * Returns { generated, skipped, failed }.
+ */
+function generateVideoThumbnails(destDir, { force = false } = {}) {
+  const thumbDir = path.join(destDir, 'thumbnails');
+  fs.mkdirSync(thumbDir, { recursive: true });
+  const videos = walkVideos(destDir);
+  let generated = 0, skipped = 0, failed = 0;
+  for (const vid of videos) {
+    const base = path.basename(vid, path.extname(vid));
+    const thumbPath = path.join(thumbDir, `${base}.jpg`);
+    if (!force && fs.existsSync(thumbPath)) { skipped++; continue; }
+    try {
+      const dur = getVideoDuration(vid);
+      if (!dur) { failed++; continue; }
+      if (extractFrame(vid, thumbPath, dur * 0.25)) generated++;
+      else failed++;
+    } catch { failed++; }
+  }
+  console.log(`[thumbnails] ${destDir}: generated=${generated} skipped=${skipped} failed=${failed}`);
+  return { generated, skipped, failed };
+}
+
+// GET /videos/:uid?page=1&pageSize=50
+// Lists all videos in a media's folder, sorted by path, paginated.
+// Returns { total, page, pageSize, items: [{name, rel, thumb}] }
+router.get('/videos/:uid', (req, res) => {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT m.path AS mediaPath, ms.path AS sourcePath
+    FROM medias m
+    JOIN mediasources ms ON ms.id = m.mediasource_id
+    WHERE m.uid = ?
+  `).get(req.params.uid);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+
+  const absDir = path.resolve(path.join(row.sourcePath, row.mediaPath));
+  const all = walkVideos(absDir)
+    .map(f => {
+      const rel = path.relative(absDir, f).replace(/\\/g, '/');
+      const base = path.basename(f, path.extname(f));
+      const thumbAbs = path.join(absDir, 'thumbnails', `${base}.jpg`);
+      return { rel, thumb: fs.existsSync(thumbAbs) };
+    });
+
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const pageSize = Math.min(500, Math.max(1, parseInt(req.query.pageSize, 10) || 50));
+  const offset = (page - 1) * pageSize;
+  const items = all.slice(offset, offset + pageSize);
+
+  res.json({ total: all.length, page, pageSize, items });
+});
+
+// GET /video-thumb/:uid/* — serves a thumbnail from <media>/thumbnails/<name>.jpg
+router.get('/video-thumb/:uid/*', (req, res) => {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT m.path AS mediaPath, ms.path AS sourcePath
+    FROM medias m
+    JOIN mediasources ms ON ms.id = m.mediasource_id
+    WHERE m.uid = ?
+  `).get(req.params.uid);
+  if (!row) return res.status(404).end();
+
+  const rel = req.params[0] || '';
+  const absDir = path.resolve(path.join(row.sourcePath, row.mediaPath));
+  const thumbsDir = path.join(absDir, 'thumbnails');
+  const absFile = path.resolve(path.join(thumbsDir, rel));
+
+  // Path traversal guard — must stay inside thumbnails dir
+  if (!absFile.startsWith(thumbsDir + path.sep) && absFile !== thumbsDir) return res.status(403).end();
+  if (path.extname(absFile).toLowerCase() !== '.jpg') return res.status(400).end();
+  if (!fs.existsSync(absFile)) return res.status(404).end();
+  res.sendFile(absFile);
+});
+
+// POST /scan/thumbnails/:uid — (re)generates thumbnails for a video media
+// Body: { force: bool }  — force=true overwrites existing thumbnails
+router.post('/thumbnails/:uid', (req, res) => {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT m.path AS mediaPath, ms.path AS sourcePath, mt.type AS mediatypeType
+    FROM medias m
+    JOIN mediasources ms ON ms.id = m.mediasource_id
+    JOIN mediatypes  mt ON mt.id = ms.mediatype_id
+    WHERE m.uid = ?
+  `).get(req.params.uid);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (row.mediatypeType !== 2) return res.status(400).json({ error: 'Only video collections support thumbnails' });
+
+  const absDir = path.resolve(path.join(row.sourcePath, row.mediaPath));
+  const force = req.body?.force === true;
+  const result = generateVideoThumbnails(absDir, { force });
+  res.json(result);
+});
+
+// GET /video/:uid/* — streams a video file with Range support for seek
+router.get('/video/:uid/*', (req, res) => {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT m.path AS mediaPath, ms.path AS sourcePath
+    FROM medias m
+    JOIN mediasources ms ON ms.id = m.mediasource_id
+    WHERE m.uid = ?
+  `).get(req.params.uid);
+  if (!row) return res.status(404).end();
+
+  const rel = req.params[0] || '';
+  const absDir = path.resolve(path.join(row.sourcePath, row.mediaPath));
+  const absFile = path.resolve(path.join(absDir, rel));
+
+  // Path traversal guard
+  if (!absFile.startsWith(absDir + path.sep) && absFile !== absDir) return res.status(403).end();
+  if (!VIDEO_EXTS.has(path.extname(absFile).toLowerCase())) return res.status(400).end();
+
+  let stat;
+  try { stat = fs.statSync(absFile); } catch { return res.status(404).end(); }
+
+  const fileSize = stat.size;
+  const rangeHeader = req.headers['range'];
+  const ext = path.extname(absFile).toLowerCase();
+  const MIME = {
+    '.mp4': 'video/mp4', '.mkv': 'video/x-matroska', '.webm': 'video/webm',
+    '.avi': 'video/x-msvideo', '.mov': 'video/quicktime', '.wmv': 'video/x-ms-wmv',
+    '.flv': 'video/x-flv', '.m4v': 'video/mp4', '.ts': 'video/mp2t',
+    '.m2ts': 'video/mp2t',
+  };
+  const contentType = MIME[ext] || 'application/octet-stream';
+
+  if (rangeHeader) {
+    const [startStr, endStr] = rangeHeader.replace('bytes=', '').split('-');
+    const start = parseInt(startStr, 10);
+    const end   = endStr ? parseInt(endStr, 10) : fileSize - 1;
+    if (start >= fileSize || end >= fileSize) {
+      return res.status(416).header('Content-Range', `bytes */${fileSize}`).end();
+    }
+    const chunkSize = end - start + 1;
+    res.writeHead(206, {
+      'Content-Range':  `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges':  'bytes',
+      'Content-Length': chunkSize,
+      'Content-Type':   contentType,
+    });
+    fs.createReadStream(absFile, { start, end }).pipe(res);
+  } else {
+    res.writeHead(200, {
+      'Content-Length': fileSize,
+      'Content-Type':   contentType,
+      'Accept-Ranges':  'bytes',
+    });
+    fs.createReadStream(absFile).pipe(res);
+  }
+});
+
 // GET /images/:uid?page=1&pageSize=50
 // Lists all images in a media's folder, sorted by path, paginated.
 // Returns { total, page, pageSize, items: [{name, rel}] }
@@ -516,10 +673,14 @@ router.post('/save', (req, res) => {
 
   res.status(201).json({ ok: true, uid: newUid, path: relPath, destDir });
 
-  // Fire-and-forget: index into Qdrant after responding (per media type)
+  // Fire-and-forget: generate thumbnails + index into Qdrant after responding (per media type)
   switch (source.mediatype_type) {
     case 1: indexImageCollection(newUid, destDir); break;
-    case 2: indexVideoCollection(newUid, destDir); break;
+    case 2:
+      // Generate thumbnails first (synchronous, but happens after response)
+      try { generateVideoThumbnails(destDir, { force: true }); } catch (e) { console.warn('[thumbnails] failed:', e.message); }
+      indexVideoCollection(newUid, destDir);
+      break;
   }
 });
 

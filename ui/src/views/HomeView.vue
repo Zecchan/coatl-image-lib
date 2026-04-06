@@ -10,7 +10,7 @@
           v-model="searchText"
           class="search-input flex-1"
           type="text"
-          :placeholder="isSemantic ? 'Describe what you\'re looking for…' : 'Search… e.g.  roshutsu  title:Bokura  $1girl  -$blue_hair'"
+          :placeholder="isSemantic ? 'Describe what you\'re looking for…' : 'Search… e.g.  freedom  title:Bokura  $1girl  -$blue_hair'"
           @keydown.enter="doSearch"
         />
         <button class="btn-primary" @click="doSearch">

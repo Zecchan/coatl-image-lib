@@ -148,6 +148,10 @@
             <input type="checkbox" v-model="editModal.reembed" :disabled="editModal.saving" />
             {{ media.mediatypeType === 2 ? 'Re-embed videos' : 'Re-embed images' }}
           </label>
+          <label v-if="media.mediatypeType === 2" class="reembed-check">
+            <input type="checkbox" v-model="editModal.regenThumbs" :disabled="editModal.saving" />
+            Regenerate thumbnails
+          </label>
           <button class="btn-secondary" :disabled="editModal.saving" @click="editModal.saving || (editModal.open = false, coverFile = null)">Cancel</button>
           <button class="btn-primary" :disabled="editModal.saving" @click="doEdit">
             {{ editModal.saving ? 'Saving…' : 'Save Changes' }}
@@ -185,7 +189,7 @@ function formatDate(str) {
 let coverFile = null  // File object set when user picks a new cover in video edit mode
 
 const editModal = reactive({
-  open: false, saving: false, error: '', reembed: false,
+  open: false, saving: false, error: '', reembed: false, regenThumbs: false,
   form: {
     cover: '', title: '', original_title: '', artist: '', series: '',
     content_rating: 'general', rating: null, language: '',
@@ -221,6 +225,7 @@ function openEdit() {
   })
   editModal.error = ''
   editModal.reembed = false
+  editModal.regenThumbs = false
   coverFile = null
   editModal.open = true
 }
@@ -258,6 +263,14 @@ async function doEdit() {
     if (editModal.reembed) {
       // Fire-and-forget re-embedding in the background
       fetch(`/db/medias/${props.media.uid}/reindex`, { method: 'POST' }).catch(() => {})
+    }
+    if (editModal.regenThumbs) {
+      // Fire-and-forget thumbnail regeneration (force=true overwrites existing)
+      fetch(`/scan/thumbnails/${props.media.uid}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: true }),
+      }).catch(() => {})
     }
   } catch (e) {
     editModal.error = e.message

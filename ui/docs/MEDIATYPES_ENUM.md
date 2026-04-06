@@ -1,0 +1,16 @@
+# Media Type Enum
+
+The `mediatypes.type` column is a **read-only internal integer** that categorises what kind of media a collection contains. It is not editable from the UI — values are defined in code only.
+
+| Value | Name | Description |
+|-------|------|-------------|
+| `1` | `IMAGE_COLLECTION` | A folder tree containing image files (JPEG, PNG, WEBP, …). Indexed with CLIP embeddings, BLIP captions, and WD14 tags. |
+
+## Adding a new type
+
+1. Add a row to the table above with the next sequential integer.
+2. Add the constant to `ui/db/mediatypeEnum.js`.
+3. Handle the new type in the Python indexing service (`app/services/`).
+4. Update any UI components that render type-specific behaviour.
+
+> **Note:** Once a `type` value is assigned and used in production data, it must never be changed or reused for a different meaning.

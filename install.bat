@@ -51,19 +51,43 @@ if "!gpuChoice!"=="2" (
     set ORT_PROVIDER=dml
 )
 
-REM Save provider choice for start.bat to pick up
-echo set ORT_PROVIDER=!ORT_PROVIDER!> .env.bat
+echo.
+set /p API_PORT="Python API port [default: 8000]: "
+if "!API_PORT!"=="" set API_PORT=8000
+
+set /p UI_PORT="Web UI port [default: 3000]: "
+if "!UI_PORT!"=="" set UI_PORT=3000
+
+REM Write .env
+(
+    echo ORT_PROVIDER=!ORT_PROVIDER!
+    echo API_PORT=!API_PORT!
+    echo UI_PORT=!UI_PORT!
+) > .env
+if exist .env.bat del .env.bat
+
+echo.
+echo Checking for Node.js...
+where node >nul 2>&1
+if !errorlevel! neq 0 (
+    echo ERROR: Node.js not found. Install from https://nodejs.org/ then re-run install.bat.
+    pause
+    exit /b 1
+)
+
+echo Installing Node.js UI dependencies...
+cd ui
+npm install
+cd ..
 
 echo.
 echo Setup complete!
 
 set /p startNow="Do you want to start the service now? (Y/n): "
-if /I "%startNow%"=="n" (
+if /I "!startNow:~0,1!"=="n" (
     echo You can start the service later by running start.bat
     pause
     exit /b 0
 )
 
-echo.
-echo Starting coatl-image-lib API...
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+call start.bat

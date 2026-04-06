@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+/* -- Base ----------------------------------------------------------------- */
+html, body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #0f0f13;
+  color: #e0e0ee;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* -- Scrollbar ------------------------------------------------------------ */
+::-webkit-scrollbar       { width: 6px; }
+::-webkit-scrollbar-track { background: #0a0a0e; }
+::-webkit-scrollbar-thumb { background: #252540; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #353550; }
+
+/* -- Shared: field -------------------------------------------------------- */
+.field {
+  display: block;
+  width: 100%;
+  background: #111118;
+  border: 1px solid #252535;
+  border-radius: 6px;
+  color: #e0e0ee;
+  padding: .45rem .75rem;
+  font-size: .875rem;
+  outline: none;
+  transition: border-color .15s;
+}
+.field:focus        { border-color: #7c5cbf; }
+.field::placeholder { color: #383848; }
+
+/* -- Shared: buttons ------------------------------------------------------ */
+.btn-primary {
+  display: inline-flex; align-items: center; gap: .375rem;
+  padding: .45rem 1.1rem;
+  background: #7c5cbf; color: #fff; border: none;
+  border-radius: 6px; font-size: .875rem; cursor: pointer;
+  transition: background .15s;
+}
+.btn-primary:hover { background: #6b4db0; }
+
+.btn-secondary {
+  display: inline-flex; align-items: center; gap: .375rem;
+  padding: .4rem .95rem;
+  background: transparent; color: #888899;
+  border: 1px solid #252535;
+  border-radius: 6px; font-size: .875rem; cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.btn-secondary:hover { border-color: #404055; color: #e0e0ee; }
+
+/* -- Toast transition ----------------------------------------------------- */
+.toast-enter-active, .toast-leave-active { transition: opacity .25s, transform .25s; }
+.toast-enter-from,   .toast-leave-to     { opacity: 0; transform: translateY(8px); }

@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.models import TextRequest, ImageRequest, TagRequest, AnalyzeRequest
 from app.services.clip_service import clip_service
 from app.services.image_service import analyze_image
@@ -7,6 +8,13 @@ from app.services.tag_service import tag_service
 import numpy as np
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")

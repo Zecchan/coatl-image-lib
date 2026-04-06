@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coatl — Administration</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --accent: #7c5cbf;
+      --bg: #0f0f13;
+      --surface: #1a1a24;
+      --border: #252535;
+    }
+
+    body {
+      background: var(--bg);
+      min-height: 100vh;
+    }
+
+    .app-nav {
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand {
+      font-weight: 700;
+      font-size: 1.2rem;
+      letter-spacing: 0.06em;
+      color: var(--accent) !important;
+    }
+
+    .admin-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.4rem 1.6rem;
+      height: 100%;
+      transition: border-color .15s;
+    }
+
+    .admin-card:hover {
+      border-color: #383858;
+    }
+
+    .admin-card .card-icon {
+      font-size: 1.6rem;
+      margin-bottom: .6rem;
+    }
+
+    .admin-card h6 {
+      font-weight: 600;
+      margin-bottom: .3rem;
+    }
+
+    .coming-soon {
+      display: inline-block;
+      font-size: .68rem;
+      background: #252535;
+      color: #666;
+      border-radius: 4px;
+      padding: 2px 7px;
+      margin-top: .4rem;
+    }
+
+    .api-status-val {
+      font-size: .82rem;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ── Navbar ─────────────────────────────────────────────────── -->
+  <nav class="app-nav navbar px-4 py-3 d-flex justify-content-between align-items-center">
+    <span class="brand"><i class="bi bi-image-fill me-2"></i>Coatl</span>
+    <a href="/" class="btn btn-sm" style="background:#1e1e2e;border:1px solid #333;color:#ccc;">
+      <i class="bi bi-arrow-left me-1"></i>Back to Library
+    </a>
+  </nav>
+
+  <!-- ── Content ────────────────────────────────────────────────── -->
+  <div class="container py-5" style="max-width:960px">
+    <h5 class="text-muted mb-4 fw-normal">
+      <i class="bi bi-gear me-2"></i>Administration
+    </h5>
+
+    <div class="row g-4">
+
+      <!-- Index folder -->
+      <div class="col-md-6">
+        <div class="admin-card">
+          <div class="card-icon text-primary"><i class="bi bi-folder-plus"></i></div>
+          <h6>Index Folder</h6>
+          <p class="text-muted small mb-1">
+            Scan a folder and add all images to the library — generates embeddings, hashes, captions, and tags.
+          </p>
+          <span class="coming-soon">Coming soon</span>
+        </div>
+      </div>
+
+      <!-- Database -->
+      <div class="col-md-6">
+        <div class="admin-card">
+          <div class="card-icon text-success"><i class="bi bi-database"></i></div>
+          <h6>Database</h6>
+          <p class="text-muted small mb-1">
+            Browse and manage the image index — SQLite metadata and Qdrant vector store.
+          </p>
+          <span class="coming-soon">Coming soon</span>
+        </div>
+      </div>
+
+      <!-- Remove images -->
+      <div class="col-md-6">
+        <div class="admin-card">
+          <div class="card-icon text-danger"><i class="bi bi-trash3"></i></div>
+          <h6>Remove Images</h6>
+          <p class="text-muted small mb-1">
+            Remove images from the index without deleting the original files.
+          </p>
+          <span class="coming-soon">Coming soon</span>
+        </div>
+      </div>
+
+      <!-- API status -->
+      <div class="col-md-6">
+        <div class="admin-card">
+          <div class="card-icon text-warning"><i class="bi bi-cpu"></i></div>
+          <h6>API Status</h6>
+          <p class="text-muted small mb-2">Python AI backend health check.</p>
+          <div id="apiStatus" class="api-status-val text-muted fst-italic">Checking…</div>
+          <div class="mt-2">
+            <button class="btn btn-sm" style="background:#1e1e2e;border:1px solid #333;color:#aaa;font-size:.78rem"
+              onclick="checkApi()">
+              <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Server Config -->
+      <div class="col-md-6">
+        <div class="admin-card" style="cursor:pointer" onclick="location.href='/serverconfig.html'">
+          <div class="card-icon" style="color:#7c5cbf"><i class="bi bi-sliders"></i></div>
+          <h6>Server Configuration</h6>
+          <p class="text-muted small mb-1">
+            Configure SQLite database path, Qdrant connection, and site settings.
+          </p>
+          <span style="font-size:.78rem;color:var(--accent)">
+            <i class="bi bi-arrow-right me-1"></i>Open
+          </span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    async function checkApi() {
+      document.getElementById('apiStatus').innerHTML = '<span class="text-muted fst-italic">Checking…</span>';
+      try {
+        const r = await fetch('/api/');
+        const data = await r.json();
+        document.getElementById('apiStatus').innerHTML =
+          `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Online</span>
+         <span class="text-muted ms-2" style="font-size:.75rem">${JSON.stringify(data)}</span>`;
+      } catch {
+        document.getElementById('apiStatus').innerHTML =
+          '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>Offline — is the Python API running?</span>';
+      }
+    }
+    checkApi();
+  </script>
+</body>
+
+</html>

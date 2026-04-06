@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coatl — Server Configuration</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --accent: #7c5cbf;
+      --bg: #0f0f13;
+      --surface: #1a1a24;
+      --border: #252535;
+    }
+
+    body {
+      background: var(--bg);
+      min-height: 100vh;
+    }
+
+    .app-nav {
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand {
+      font-weight: 700;
+      font-size: 1.2rem;
+      letter-spacing: 0.06em;
+      color: var(--accent) !important;
+    }
+
+    .section-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.6rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .section-card h6 {
+      font-weight: 600;
+      margin-bottom: 1rem;
+      padding-bottom: .6rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+
+    .form-control,
+    .form-select {
+      background: #13131d !important;
+      border: 1px solid #2e2e44 !important;
+      color: #ccc !important;
+      border-radius: 7px;
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+      border-color: var(--accent) !important;
+      box-shadow: 0 0 0 2px #7c5cbf33 !important;
+    }
+
+    .form-label {
+      font-size: .82rem;
+      color: #888;
+      margin-bottom: .3rem;
+    }
+
+    .note-box {
+      background: #13131d;
+      border: 1px solid #2a2a3a;
+      border-radius: 8px;
+      padding: .75rem 1rem;
+      font-size: .78rem;
+      color: #666;
+    }
+
+    .note-box a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .note-box a:hover {
+      text-decoration: underline;
+    }
+
+    .btn-save {
+      background: var(--accent);
+      border: none;
+      color: #fff;
+      padding: .45rem 1.4rem;
+      border-radius: 7px;
+      font-size: .9rem;
+    }
+
+    .btn-save:hover {
+      background: #6a4da8;
+      color: #fff;
+    }
+
+    #toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: #1e1e2e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: .65rem 1.1rem;
+      font-size: .82rem;
+      color: #ccc;
+      display: none;
+      z-index: 9999;
+      align-items: center;
+      gap: .5rem;
+    }
+
+    #toast.show {
+      display: flex;
+    }
+
+    #toast.ok {
+      border-color: #3cba6e44;
+      color: #3cba6e;
+    }
+
+    #toast.err {
+      border-color: #e0525244;
+      color: #e05252;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ── Navbar ─────────────────────────────────────────────────── -->
+  <nav class="app-nav navbar px-4 py-3 d-flex justify-content-between align-items-center">
+    <span class="brand"><i class="bi bi-image-fill me-2"></i>Coatl</span>
+    <a href="/admin.html" class="btn btn-sm" style="background:#1e1e2e;border:1px solid #333;color:#ccc;">
+      <i class="bi bi-arrow-left me-1"></i>Administration
+    </a>
+  </nav>
+
+  <!-- ── Content ────────────────────────────────────────────────── -->
+  <div class="container py-5" style="max-width:720px">
+    <h5 class="text-muted mb-4 fw-normal">
+      <i class="bi bi-sliders me-2"></i>Server Configuration
+    </h5>
+
+    <!-- Site Settings -->
+    <div class="section-card">
+      <h6><i class="bi bi-globe2 text-info"></i> Site Settings</h6>
+      <div class="mb-3">
+        <label class="form-label">Library Title</label>
+        <input type="text" class="form-control" id="siteTitle" placeholder="Coatl Image Library" />
+        <div class="mt-1" style="font-size:.72rem;color:#555">Displayed in the browser tab and navbar.</div>
+      </div>
+    </div>
+
+    <!-- SQLite -->
+    <div class="section-card">
+      <h6><i class="bi bi-file-earmark-binary text-success"></i> SQLite Database</h6>
+      <div class="mb-3">
+        <label class="form-label">Database Path</label>
+        <input type="text" class="form-control" id="sqlitePath" placeholder="./data/coatl.db" />
+        <div class="mt-1" style="font-size:.72rem;color:#555">
+          Relative to the <code style="color:#666">ui/</code> folder, or an absolute path (e.g. <code
+            style="color:#666">D:/coatl/coatl.db</code>).
+        </div>
+      </div>
+      <div class="note-box">
+        <i class="bi bi-info-circle me-1"></i>
+        SQLite is bundled with Node.js via <code>better-sqlite3</code> — no separate installation needed.
+        The database file is created automatically on first use.
+      </div>
+    </div>
+
+    <!-- Qdrant -->
+    <div class="section-card">
+      <h6><i class="bi bi-diagram-3 text-warning"></i> Qdrant Vector Database</h6>
+      <div class="row g-3 mb-3">
+        <div class="col-8">
+          <label class="form-label">Host</label>
+          <input type="text" class="form-control" id="qdrantHost" placeholder="127.0.0.1" />
+        </div>
+        <div class="col-4">
+          <label class="form-label">Port</label>
+          <input type="number" class="form-control" id="qdrantPort" placeholder="6333" min="1" max="65535" />
+        </div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Collection Name</label>
+        <input type="text" class="form-control" id="qdrantCollection" placeholder="coatl_images" />
+      </div>
+      <div class="note-box">
+        <i class="bi bi-info-circle me-1"></i>
+        Qdrant must be installed and running separately.
+        Download from <a href="https://qdrant.tech/documentation/quick-start/" target="_blank">qdrant.tech</a>
+        or run via Docker:
+        <div class="mt-1">
+          <code style="color:#888;font-size:.75rem">
+          docker run -p 6333:6333 qdrant/qdrant
+        </code>
+        </div>
+      </div>
+    </div>
+
+    <!-- Save -->
+    <div class="d-flex justify-content-end gap-2">
+      <button class="btn btn-sm" style="background:#1e1e2e;border:1px solid #333;color:#999;" onclick="loadConfig()">
+        <i class="bi bi-arrow-counterclockwise me-1"></i>Reset
+      </button>
+      <button class="btn-save btn" onclick="saveConfig()">
+        <i class="bi bi-floppy me-1"></i>Save Configuration
+      </button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // ── Toast ─────────────────────────────────────────────────────
+    let _toastTimer;
+    function showToast(msg, type = 'ok') {
+      const t = document.getElementById('toast');
+      t.className = 'show ' + type;
+      t.innerHTML = `<i class="bi bi-${type === 'ok' ? 'check-circle' : 'x-circle'}"></i> ${msg}`;
+      clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(() => t.className = '', 3000);
+    }
+
+    // ── Load config ───────────────────────────────────────────────
+    async function loadConfig() {
+      try {
+        const cfg = await fetch('/config').then(r => r.json());
+        document.getElementById('siteTitle').value = cfg.site?.title || '';
+        document.getElementById('sqlitePath').value = cfg.sqlite?.path || '';
+        document.getElementById('qdrantHost').value = cfg.qdrant?.host || '';
+        document.getElementById('qdrantPort').value = cfg.qdrant?.port || '';
+        document.getElementById('qdrantCollection').value = cfg.qdrant?.collectionName || '';
+      } catch (e) {
+        showToast('Failed to load config: ' + e.message, 'err');
+      }
+    }
+
+    // ── Save config ───────────────────────────────────────────────
+    async function saveConfig() {
+      const payload = {
+        site: {
+          title: document.getElementById('siteTitle').value.trim() || 'Coatl Image Library',
+        },
+        sqlite: {
+          path: document.getElementById('sqlitePath').value.trim() || './data/coatl.db',
+        },
+        qdrant: {
+          host: document.getElementById('qdrantHost').value.trim() || '127.0.0.1',
+          port: parseInt(document.getElementById('qdrantPort').value) || 6333,
+          collectionName: document.getElementById('qdrantCollection').value.trim() || 'coatl_images',
+        },
+      };
+
+      try {
+        const r = await fetch('/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await r.json();
+        if (data.ok) showToast('Configuration saved.');
+        else showToast('Save failed: ' + data.error, 'err');
+      } catch (e) {
+        showToast('Save failed: ' + e.message, 'err');
+      }
+    }
+
+    loadConfig();
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coatl — Image Library</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --accent: #7c5cbf;
+      --bg: #0f0f13;
+      --surface: #1a1a24;
+      --border: #252535;
+    }
+
+    body {
+      background: var(--bg);
+      min-height: 100vh;
+    }
+
+    /* Navbar */
+    .app-nav {
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand {
+      font-weight: 700;
+      font-size: 1.2rem;
+      letter-spacing: 0.06em;
+      color: var(--accent) !important;
+    }
+
+    /* API status dot */
+    .api-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .dot-ok {
+      background: #3cba6e;
+      box-shadow: 0 0 6px #3cba6e88;
+    }
+
+    .dot-err {
+      background: #e05252;
+    }
+
+    .dot-wait {
+      background: #f0a030;
+      animation: pulse 1.2s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: .4
+      }
+    }
+
+    /* Search bar */
+    .search-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.2rem 1.5rem;
+    }
+
+    .search-input {
+      background: transparent !important;
+      border: none !important;
+      border-bottom: 1px solid #383850 !important;
+      border-radius: 0 !important;
+      color: #ddd !important;
+      font-size: 1rem;
+      padding-bottom: .45rem;
+    }
+
+    .search-input:focus {
+      box-shadow: none !important;
+      border-bottom-color: var(--accent) !important;
+    }
+
+    .search-input::placeholder {
+      color: #555;
+    }
+
+    .btn-search {
+      background: var(--accent);
+      border: none;
+      color: #fff;
+      padding: .4rem 1.1rem;
+    }
+
+    .btn-search:hover {
+      background: #6a4da8;
+      color: #fff;
+    }
+
+    /* Image card */
+    .img-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform .15s, border-color .15s, box-shadow .15s;
+    }
+
+    .img-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--accent);
+      box-shadow: 0 6px 24px #7c5cbf33;
+    }
+
+    .img-card img {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .img-card-body {
+      padding: .55rem .75rem;
+      font-size: .75rem;
+      color: #888;
+    }
+
+    .img-card-body .img-name {
+      color: #bbb;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 5rem 1rem;
+    }
+
+    .empty-icon {
+      font-size: 4rem;
+      color: #2a2a3a;
+    }
+
+    /* Toolbar */
+    .gallery-toolbar {
+      font-size: .82rem;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ── Navbar ─────────────────────────────────────────────────── -->
+  <nav class="app-nav navbar px-4 py-3 d-flex justify-content-between align-items-center">
+    <span class="brand">
+      <i class="bi bi-image-fill me-2"></i>Coatl
+    </span>
+    <div class="d-flex align-items-center gap-3">
+      <div class="d-flex align-items-center gap-2 text-muted" style="font-size:.78rem">
+        <span class="api-dot dot-wait" id="apiDot"></span>
+        <span id="apiLabel">connecting…</span>
+      </div>
+      <a href="/admin.html" class="btn btn-sm" style="background:#1e1e2e;border:1px solid #333;color:#ccc;">
+        <i class="bi bi-gear me-1"></i>Administration
+      </a>
+    </div>
+  </nav>
+
+  <!-- ── Main ───────────────────────────────────────────────────── -->
+  <div class="container-fluid px-4 py-4" style="max-width:1600px">
+
+    <!-- Search -->
+    <div class="search-wrap mb-4">
+      <div class="d-flex align-items-center gap-3">
+        <i class="bi bi-search text-muted"></i>
+        <input id="searchInput" type="text" class="form-control search-input flex-grow-1"
+          placeholder="Search by description — e.g. blue hair anime girl outdoors" />
+        <button class="btn btn-search btn-sm rounded-3" onclick="doSearch()">Search</button>
+        <button class="btn btn-sm rounded-3" style="background:#1e1e2e;border:1px solid #333;color:#999;"
+          onclick="clearSearch()">Clear</button>
+      </div>
+      <div class="mt-2 ps-4 text-muted" style="font-size:.75rem">
+        Semantic search — finds images by meaning, not filename.
+      </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="gallery-toolbar d-flex justify-content-between align-items-center mb-3 text-muted">
+      <span id="resultsLabel">All images</span>
+    </div>
+
+    <!-- Gallery grid -->
+    <div id="gallery" class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-xl-6 g-3"></div>
+
+    <!-- Empty state -->
+    <div id="emptyState" class="empty-state d-none">
+      <div class="empty-icon"><i class="bi bi-images"></i></div>
+      <h6 class="mt-3 text-muted" id="emptyTitle">No images indexed yet</h6>
+      <p class="text-muted" style="font-size:.85rem" id="emptyMsg">
+        Go to <a href="/admin.html" style="color:var(--accent);text-decoration:none">Administration</a>
+        to index your image folders.
+      </p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // ── API status ────────────────────────────────────────────────
+    async function checkApi() {
+      try {
+        const r = await fetch('/api/');
+        if (!r.ok) throw new Error();
+        setDot('ok', 'API online');
+      } catch {
+        setDot('err', 'API offline');
+      }
+    }
+
+    function setDot(state, label) {
+      const dot = document.getElementById('apiDot');
+      dot.className = 'api-dot dot-' + (state === 'ok' ? 'ok' : state === 'err' ? 'err' : 'wait');
+      document.getElementById('apiLabel').textContent = label;
+    }
+
+    // ── Gallery helpers ───────────────────────────────────────────
+    function renderCard(img) {
+      const col = document.createElement('div');
+      col.className = 'col';
+      col.innerHTML = `
+      <div class="img-card">
+        <img src="${img.thumb || img.path}" alt="" loading="lazy"
+             onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22180%22><rect fill=%22%231a1a24%22 width=%22200%22 height=%22180%22/><text x=%2250%%22 y=%2250%%22 fill=%22%23444%22 font-size=%2240%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22>?</text></svg>'" />
+        <div class="img-card-body">
+          <div class="img-name">${img.name || img.path?.split(/[\\/]/).pop() || '—'}</div>
+        </div>
+      </div>`;
+      return col;
+    }
+
+    function showEmpty(title, msg) {
+      document.getElementById('gallery').innerHTML = '';
+      document.getElementById('emptyTitle').textContent = title || 'No images indexed yet';
+      document.getElementById('emptyMsg').innerHTML = msg ||
+        'Go to <a href="/admin.html" style="color:var(--accent);text-decoration:none">Administration</a> to index your image folders.';
+      document.getElementById('emptyState').classList.remove('d-none');
+      document.getElementById('resultsLabel').textContent = '0 results';
+    }
+
+    function showGallery(images) {
+      const grid = document.getElementById('gallery');
+      document.getElementById('emptyState').classList.add('d-none');
+      grid.innerHTML = '';
+      images.forEach(img => grid.appendChild(renderCard(img)));
+      document.getElementById('resultsLabel').textContent = `${images.length} image${images.length !== 1 ? 's' : ''}`;
+    }
+
+    // ── Search ────────────────────────────────────────────────────
+    async function doSearch() {
+      const text = document.getElementById('searchInput').value.trim();
+      if (!text) { loadGallery(); return; }
+
+      setDot('wait', 'searching…');
+      try {
+        // Embed the text — future: rank indexed images by similarity
+        const r = await fetch('/api/embed_text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        setDot('ok', 'API online');
+        // Placeholder until SQLite/Qdrant search is wired up
+        showEmpty(`"${text}"`, 'Image indexing not yet set up — go to <a href="/admin.html" style="color:var(--accent);text-decoration:none">Administration</a> to index folders first.');
+      } catch (e) {
+        setDot('err', 'API offline');
+        showEmpty('Search failed', e.message);
+      }
+    }
+
+    function clearSearch() {
+      document.getElementById('searchInput').value = '';
+      loadGallery();
+    }
+
+    // ── Gallery load ──────────────────────────────────────────────
+    async function loadGallery() {
+      // Placeholder: will query SQLite for indexed images
+      showEmpty();
+    }
+
+    // ── Init ──────────────────────────────────────────────────────
+    document.getElementById('searchInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doSearch();
+    });
+
+    checkApi();
+    loadGallery();
+  </script>
+</body>
+
+</html>

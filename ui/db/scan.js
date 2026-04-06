@@ -208,6 +208,12 @@ router.post('/save', (req, res) => {
   const absSource = path.resolve(scanDir);
   const relPath = `${artistSlug}/${titleSlug}`;
 
+  // Check DB for duplicate (same path within same source)
+  const duplicate = db.prepare('SELECT uid FROM medias WHERE mediasource_id = ? AND path = ?').get(source.id, relPath);
+  if (duplicate) {
+    return res.status(409).json({ error: 'This folder has already been added to your library.' });
+  }
+
   // Move folder if not already in the right place
   if (absSource.toLowerCase() !== destDir.toLowerCase()) {
     if (fs.existsSync(destDir))

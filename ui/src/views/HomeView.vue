@@ -144,6 +144,8 @@
           </div>
           <!-- Content rating badge -->
           <span class="cr-badge" :class="`cr-${m.content_rating}`">{{ m.content_rating }}</span>
+          <!-- Embedded in Qdrant indicator -->
+          <span v-if="m.qdrant_indexed_at" class="embed-badge" title="Embedded for semantic search"><Zap :size="11" /></span>
           <!-- Semantic similarity score -->
           <span v-if="m.semanticScore !== undefined" class="score-badge">{{ Math.round(m.semanticScore * 100) }}%</span>
         </div>
@@ -717,6 +719,14 @@ code { background: #1e1e30; border-radius: 3px; padding: 0 .35em; font-size: .88
 .dz-size { font-size: .68rem; color: #555570; }
 .dz-clear { background: none; border: none; color: #444460; cursor: pointer; padding: .2rem; line-height: 1; }
 .dz-clear:hover { color: #e05050; }
+
+/* Embedded badge */
+.embed-badge {
+  position: absolute; bottom: .4rem; right: .4rem;
+  display: flex; align-items: center; justify-content: center;
+  width: 1.35rem; height: 1.35rem; border-radius: 4px;
+  background: #1a1535cc; color: #b090f0; border: 1px solid #7c5cbf55;
+}
 
 /* Semantic score badge */
 .score-badge {

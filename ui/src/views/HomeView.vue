@@ -153,11 +153,11 @@
         <!-- Info -->
         <div class="card-body">
           <div class="card-title" :title="m.title">{{ m.title }}</div>
-          <div v-if="m.matchedTrack" class="card-sub card-matched-track" :title="m.matchedTrack">â™ª {{ m.matchedTrack }}</div>
+          <div v-if="m.matchedTrack" class="card-sub card-matched-track" :title="m.matchedTrack">♪ {{ m.matchedTrack }}</div>
           <div v-else-if="m.artist" class="card-sub" :title="m.artist">{{ m.artist }}</div>
           <!-- Quality score stars -->
           <div v-if="m.rating" class="card-stars">
-            <span v-for="s in 5" :key="s" :style="s <= m.rating ? 'color:#f0c040' : 'color:#2a2a3a'">â˜…</span>
+            <span v-for="s in 5" :key="s" :style="s <= m.rating ? 'color:#f0c040' : 'color:#2a2a3a'">★</span>
           </div>
           <!-- Top 3 tags -->
           <div v-if="m.tags?.length" class="card-tags">
@@ -201,7 +201,7 @@ import { Search, Images, SlidersHorizontal, ChevronDown, Zap, ImagePlus, X } fro
 const route  = useRoute()
 const router = useRouter()
 
-// â”€â”€ Search / page state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Search / page state ───────────────────────────────────────────────────────
 const searchText = ref('')
 const medias     = ref([])
 const total      = ref(0)
@@ -210,16 +210,16 @@ const pageSize   = ref(25)
 const emptyTitle = ref('No media indexed yet')
 const emptyMsg   = ref('Go to <a href="/admin">Administration</a> to index your image folders.')
 
-// â”€â”€ Search mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Search mode ───────────────────────────────────────────────────────────────
 const searchMode  = ref('keyword') // 'keyword' | 'semantic'
 const semanticSub = ref('text')    // 'text' | 'image'
 const isSemantic  = computed(() => searchMode.value === 'semantic')
 
-// â”€â”€ Image query state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Image query state
 // queryImage: { preview (data URL), base64 (pure b64 of resized blob), name, sizeLabel }
 const queryImage = ref(null)
 
-const MAX_DIM = 512 // px â€” CLIP only needs 224 but 512 gives a safe margin
+const MAX_DIM = 512 // px — CLIP only needs 224 but 512 gives a safe margin
 
 function resizeAndEncode(file) {
   return new Promise((resolve, reject) => {
@@ -273,7 +273,7 @@ function setSemanticSub(sub) {
   queryImage.value = null
 }
 
-// â”€â”€ Filter cookie persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Filter cookie persistence ─────────────────────────────────────────────
 const FILTER_COOKIE = 'coatl_filters'
 const COOKIE_MAX_AGE = 365 * 24 * 3600 // 1 year
 
@@ -295,7 +295,7 @@ function loadFilterCookie() {
   } catch { /* ignore corrupt cookie */ }
 }
 
-// â”€â”€ Advanced filter state (pending â€” only applied on Search) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Advanced filter state (pending — only applied on Search)
 const filterOpen          = ref(false)
 const mediatypes            = ref([])
 const selectedMediatypeUids = ref([])
@@ -321,7 +321,7 @@ function toggleMediatype(uid) {
   saveFilterCookie()
 }
 
-// â”€â”€ Active query (what the backend is currently showing) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Active query (what the backend is currently showing) ──────────────────────
 // Captured from the form on Search click; page navigation reuses it.
 const activeQuery = ref({ q: '', mediatypeUids: [], maxRating: 'explicit' })
 
@@ -353,10 +353,10 @@ const resultsLabel = computed(() => {
   if (!total.value) return ''
   const start = (page.value - 1) * pageSize.value + 1
   const end   = Math.min(page.value * pageSize.value, total.value)
-  return `${start}â€“${end} of ${total.value} entr${total.value !== 1 ? 'ies' : 'y'}`
+  return `${start} - ${end} of ${total.value} entr${total.value !== 1 ? 'ies' : 'y'}`
 })
 
-// â”€â”€ Data fetching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Data fetching
 async function runFetch() {
   const aq = activeQuery.value
   const p  = new URLSearchParams()
@@ -551,10 +551,10 @@ function clickTag(name, e) {
 }
 
 // Resolve the correct src for a media cover:
-// - HTTP/FTP URL  â†’ use directly
-// - absolute path â†’ /scan/image?f=<path>  (server validates extension)
-// - relative name â†’ /scan/cover/:uid      (server joins sourcePath + mediaPath + cover)
-// - empty         â†’ null (placeholder shown)
+// - HTTP/FTP URL  → use directly
+// - absolute path → /scan/image?f=<path>  (server validates extension)
+// - relative name → /scan/cover/:uid      (server joins sourcePath + mediaPath + cover)
+// - empty         → null (placeholder shown)
 function coverSrc(m) {
   if (!m.cover) return null
   if (/^(https?|ftp):\/\//i.test(m.cover)) return m.cover

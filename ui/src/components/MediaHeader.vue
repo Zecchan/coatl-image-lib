@@ -30,7 +30,10 @@
           <!-- Type 1: Image Collection -->
           <template v-if="media.mediatypeType === 1">
             <span class="meta-key">Artist</span>
-            <span class="meta-val">{{ media.artist || '—' }}</span>
+            <span class="meta-val">
+              <span v-if="media.artist" class="artist-link" @click="goArtist(media.artist)">{{ media.artist }}</span>
+              <span v-else>&mdash;</span>
+            </span>
             <span class="meta-key">Circle / Series</span>
             <span class="meta-val">{{ media.series || '—' }}</span>
             <span class="meta-key">Pages</span>
@@ -47,7 +50,10 @@
           <!-- Type 2: Video Collection -->
           <template v-else-if="media.mediatypeType === 2">
             <span class="meta-key">Artist</span>
-            <span class="meta-val">{{ media.artist || '—' }}</span>
+            <span class="meta-val">
+              <span v-if="media.artist" class="artist-link" @click="goArtist(media.artist)">{{ media.artist }}</span>
+              <span v-else>&mdash;</span>
+            </span>
             <span class="meta-key">Series</span>
             <span class="meta-val">{{ media.series || '—' }}</span>
             <span class="meta-key">Videos</span>
@@ -64,7 +70,10 @@
           <!-- Type 3: Music Collection -->
           <template v-else-if="media.mediatypeType === 3">
             <span class="meta-key">Artist</span>
-            <span class="meta-val">{{ media.artist || '—' }}</span>
+            <span class="meta-val">
+              <span v-if="media.artist" class="artist-link" @click="goArtist(media.artist)">{{ media.artist }}</span>
+              <span v-else>&mdash;</span>
+            </span>
             <span class="meta-key">Series</span>
             <span class="meta-val">{{ media.series || '—' }}</span>
             <span class="meta-key">Duration</span>
@@ -78,7 +87,8 @@
           <!-- Fallback: show any non-empty field -->
           <template v-else>
             <template v-if="media.artist">
-              <span class="meta-key">Artist</span><span class="meta-val">{{ media.artist }}</span>
+              <span class="meta-key">Artist</span>
+              <span class="meta-val"><span class="artist-link" @click="goArtist(media.artist)">{{ media.artist }}</span></span>
             </template>
             <template v-if="media.series">
               <span class="meta-key">Series</span><span class="meta-val">{{ media.series }}</span>
@@ -176,6 +186,7 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ImageOff, Pencil, FolderOpen, Copy } from 'lucide-vue-next'
 import MediaEntryForm from './MediaEntryForm.vue'
 
@@ -183,6 +194,13 @@ const props = defineProps({
   media: { type: Object, required: true },
 })
 const emit = defineEmits(['tag-click', 'updated'])
+
+const router = useRouter()
+
+function goArtist(artist) {
+  if (!artist) return
+  router.push({ path: '/', query: { q: `artist:${artist}` } })
+}
 
 const coverUrl = computed(() => {
   const m = props.media
@@ -376,6 +394,8 @@ async function doEdit() {
 }
 .meta-key { color: #484860; font-weight: 600; }
 .meta-val { color: #9090b0; }
+.artist-link { color: #9090b0; cursor: pointer; transition: color .15s; }
+.artist-link:hover { color: #b090f0; text-decoration: underline; }
 .link { color: #7c5cbf; text-decoration: none; }
 .link:hover { text-decoration: underline; }
 .path-row { display: flex; align-items: center; gap: .4rem; min-width: 0; }

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.models import TextRequest, ImageRequest, TagRequest, AnalyzeRequest, IndexRequest, SearchRequest
+from app.models import TextRequest, ImageRequest, TagRequest, AnalyzeRequest, IndexRequest, SearchRequest, ImageSearchRequest
 from app.services.clip_service import clip_service
 from app.services.image_service import analyze_image
 from app.services.caption_service import caption_service
@@ -90,6 +90,21 @@ def delete_index(media_uid: str):
 @app.post("/search_images")
 def search_images(req: SearchRequest):
     hits = qdrant_service.search_by_text(req.text, req.limit)
+    return {"results": hits}
+
+
+# SEMANTIC IMAGE SEARCH
+@app.post("/search_by_image")
+def search_by_image(req: ImageSearchRequest):
+    import base64, io
+    from PIL import Image
+    try:
+        data = base64.b64decode(req.image_base64)
+        image = Image.open(io.BytesIO(data)).convert("RGB")
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+    hits = qdrant_service.search_by_image(image, req.limit)
     return {"results": hits}
 
 

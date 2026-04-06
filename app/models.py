@@ -28,3 +28,8 @@ class IndexRequest(BaseModel):
 class SearchRequest(BaseModel):
     text: str
     limit: Optional[int] = 20
+
+
+class ImageSearchRequest(BaseModel):
+    image_base64: str
+    limit: Optional[int] = 20

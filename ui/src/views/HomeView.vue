@@ -6,13 +6,16 @@
       <div class="flex items-center gap-3">
         <Search :size="16" style="color:#484860;flex-shrink:0" />
         <input
+          v-if="!(isSemantic && semanticSub === 'image')"
           v-model="searchText"
           class="search-input flex-1"
           type="text"
-          placeholder="Search… e.g.  roshutsu  title:Bokura  $1girl  -$blue_hair"
+          :placeholder="isSemantic ? 'Describe what you\'re looking for…' : 'Search… e.g.  roshutsu  title:Bokura  $1girl  -$blue_hair'"
           @keydown.enter="doSearch"
         />
-        <button class="btn-primary" @click="doSearch">Search</button>
+        <button class="btn-primary" @click="doSearch">
+          {{ isSemantic && semanticSub === 'image' ? 'Search Image' : 'Search' }}
+        </button>
         <button class="btn-secondary" @click="clearSearch">Clear</button>
         <div class="mode-toggle">
           <button class="mode-btn" :class="{ active: searchMode === 'keyword' }" @click="setMode('keyword')">Keyword</button>
@@ -37,9 +40,42 @@
         <code>$tag</code> requires a tag &nbsp;·&nbsp;
         <code>-$tag</code> excludes a tag
       </p>
-      <p v-else style="margin:.6rem 0 0 1.6rem;font-size:.72rem;color:#404055">
-        Describe what you&rsquo;re looking for &mdash; e.g. <em style="color:#7c6090">two girls under cherry blossoms</em>
-      </p>
+      <template v-else>
+        <!-- Semantic sub-mode: Text vs Image toggle -->
+        <div class="semantic-sub-toggle">
+          <button class="sub-btn" :class="{ active: semanticSub === 'text' }" @click="setSemanticSub('text')">Text</button>
+          <button class="sub-btn" :class="{ active: semanticSub === 'image' }" @click="setSemanticSub('image')">
+            <ImagePlus :size="11" /> Image
+          </button>
+        </div>
+
+        <!-- Text sub-mode hint -->
+        <p v-if="semanticSub === 'text'" style="margin:.4rem 0 0 0;font-size:.72rem;color:#404055">
+          Describe what you&rsquo;re looking for &mdash; e.g. <em style="color:#7c6090">two girls under cherry blossoms</em>
+        </p>
+
+        <!-- Image sub-mode dropzone -->
+        <div v-else class="img-dropzone"
+          :class="{ 'dz-has-image': queryImage }"
+          @click="!queryImage && $refs.imgInput.click()"
+          @dragover.prevent
+          @drop.prevent="onImageDrop"
+        >
+          <input ref="imgInput" type="file" accept="image/*" style="display:none" @change="onImagePick" />
+          <template v-if="queryImage">
+            <img :src="queryImage.preview" class="dz-preview" />
+            <div class="dz-info">
+              <span class="dz-name">{{ queryImage.name }}</span>
+              <span class="dz-size">{{ queryImage.sizeLabel }}</span>
+            </div>
+            <button class="dz-clear" @click.stop="clearQueryImage"><X :size="13" /></button>
+          </template>
+          <template v-else>
+            <ImagePlus :size="24" style="color:#333348" />
+            <span style="font-size:.78rem;color:#404055;margin-top:.4rem">Click or drag an image to search</span>
+          </template>
+        </div>
+      </template>
 
       <!-- Advanced filters panel -->
       <div v-show="advancedOpen" class="adv-panel">
@@ -157,7 +193,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Search, Images, SlidersHorizontal, ChevronDown, Zap } from 'lucide-vue-next'
+import { Search, Images, SlidersHorizontal, ChevronDown, Zap, ImagePlus, X } from 'lucide-vue-next'
 
 const route  = useRoute()
 const router = useRouter()
@@ -172,8 +208,67 @@ const emptyTitle = ref('No media indexed yet')
 const emptyMsg   = ref('Go to <a href="/admin">Administration</a> to index your image folders.')
 
 // ── Search mode ───────────────────────────────────────────────────────────────
-const searchMode = ref('keyword') // 'keyword' | 'semantic'
-const isSemantic = computed(() => searchMode.value === 'semantic')
+const searchMode  = ref('keyword') // 'keyword' | 'semantic'
+const semanticSub = ref('text')    // 'text' | 'image'
+const isSemantic  = computed(() => searchMode.value === 'semantic')
+
+// ── Image query state ──────────────────────────────────────────────────────
+// queryImage: { preview (data URL), base64 (pure b64 of resized blob), name, sizeLabel }
+const queryImage = ref(null)
+
+const MAX_DIM = 512 // px — CLIP only needs 224 but 512 gives a safe margin
+
+function resizeAndEncode(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const { width: w, height: h } = img
+      const scale = Math.min(1, MAX_DIM / Math.max(w, h))
+      const cw = Math.round(w * scale)
+      const ch = Math.round(h * scale)
+      const canvas = document.createElement('canvas')
+      canvas.width  = cw
+      canvas.height = ch
+      canvas.getContext('2d').drawImage(img, 0, 0, cw, ch)
+      canvas.toBlob(blob => {
+        const reader = new FileReader()
+        reader.onload = e => {
+          // data URL = "data:image/jpeg;base64,<b64>"
+          const b64 = e.target.result.split(',')[1]
+          resolve({ preview: e.target.result, base64: b64 })
+        }
+        reader.onerror = reject
+        reader.readAsDataURL(blob)
+      }, 'image/jpeg', 0.85)
+    }
+    img.onerror = reject
+    img.src = url
+  })
+}
+
+function fmtBytes(n) {
+  return n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+async function loadImageFile(file) {
+  if (!file || !file.type.startsWith('image/')) return
+  const { preview, base64 } = await resizeAndEncode(file)
+  queryImage.value = { preview, base64, name: file.name, sizeLabel: fmtBytes(file.size) }
+}
+
+function onImagePick(e) { const f = e.target.files?.[0]; if (f) loadImageFile(f) }
+function onImageDrop(e) { const f = e.dataTransfer.files?.[0]; if (f) loadImageFile(f) }
+function clearQueryImage() {
+  queryImage.value = null
+  medias.value = []; total.value = 0
+}
+function setSemanticSub(sub) {
+  semanticSub.value = sub
+  medias.value = []; total.value = 0
+  queryImage.value = null
+}
 
 // ── Advanced filter state (pending — only applied on Search) ──────────────────
 const advancedOpen          = ref(false)
@@ -295,6 +390,36 @@ async function runSemanticFetch() {
   }
 }
 
+async function runImageFetch() {
+  const qi = queryImage.value
+  if (!qi) return
+  try {
+    const res = await fetch('/db/search/by-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image_base64: qi.base64,
+        limit: 20,
+        mediatypeUids: activeQuery.value.mediatypeUids,
+        maxRating: activeQuery.value.maxRating,
+      }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const data = await res.json()
+    medias.value = data.results
+    total.value  = data.results.length
+    if (!data.results.length) {
+      emptyTitle.value = 'No similar images found'
+      emptyMsg.value   = 'Try a different image or make sure collections have been indexed.'
+    }
+  } catch {
+    medias.value = []
+    total.value  = 0
+    emptyTitle.value = 'Image search failed'
+    emptyMsg.value   = 'Could not reach the API. Make sure the Python server is running.'
+  }
+}
+
 // Capture current form state, reset to page 1, fetch.
 async function doSearch() {
   activeQuery.value = {
@@ -304,14 +429,24 @@ async function doSearch() {
   }
   page.value = 1
   if (isSemantic.value) {
-    if (!activeQuery.value.q) {
-      medias.value = []
-      total.value  = 0
-      emptyTitle.value = 'Enter a search query'
-      emptyMsg.value   = 'Semantic search requires a text description.'
-      return
+    if (semanticSub.value === 'image') {
+      if (!queryImage.value) {
+        emptyTitle.value = 'No image selected'
+        emptyMsg.value   = 'Drop or pick an image to search by similarity.'
+        medias.value = []; total.value = 0
+        return
+      }
+      await runImageFetch()
+    } else {
+      if (!activeQuery.value.q) {
+        medias.value = []
+        total.value  = 0
+        emptyTitle.value = 'Enter a search query'
+        emptyMsg.value   = 'Semantic search requires a text description.'
+        return
+      }
+      await runSemanticFetch()
     }
-    await runSemanticFetch()
   } else {
     await runFetch()
   }
@@ -335,6 +470,7 @@ function clearSearch() {
   maxRating.value             = 'explicit'
   activeQuery.value           = { q: '', mediatypeUids: [], maxRating: 'explicit' }
   page.value                  = 1
+  queryImage.value            = null
   if (isSemantic.value) {
     medias.value = []
     total.value  = 0
@@ -346,6 +482,8 @@ function clearSearch() {
 function setMode(mode) {
   if (searchMode.value === mode) return
   searchMode.value = mode
+  semanticSub.value = 'text'
+  queryImage.value = null
   page.value = 1
   if (mode === 'semantic') {
     if (activeQuery.value.q) runSemanticFetch()
@@ -547,6 +685,38 @@ code { background: #1e1e30; border-radius: 3px; padding: 0 .35em; font-size: .88
 .mode-btn:hover { background: #222232; color: #9090b0; }
 .mode-btn.active { background: #1e1535; color: #b090f0; }
 .mode-btn + .mode-btn { border-left: 1px solid #252535; }
+
+/* Semantic sub-toggle */
+.semantic-sub-toggle {
+  display: inline-flex; margin-top: .6rem; border: 1px solid #1e1e30; border-radius: 5px; overflow: hidden;
+}
+.sub-btn {
+  background: #111118; border: none; color: #444460; font-size: .7rem;
+  padding: .22rem .65rem; cursor: pointer; display: inline-flex; align-items: center; gap: .3rem;
+  transition: background .12s, color .12s;
+}
+.sub-btn:hover { background: #1a1a28; color: #8888aa; }
+.sub-btn.active { background: #1a1035; color: #9070d8; }
+.sub-btn + .sub-btn { border-left: 1px solid #1e1e30; }
+
+/* Image dropzone */
+.img-dropzone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  margin-top: .6rem; border: 1px dashed #252535; border-radius: 8px;
+  padding: .75rem 1rem; cursor: pointer; min-height: 70px;
+  transition: border-color .15s, background .15s;
+}
+.img-dropzone:hover { border-color: #7c5cbf; background: #12121e; }
+.img-dropzone.dz-has-image {
+  flex-direction: row; align-items: center; cursor: default;
+  border-style: solid; border-color: #2a2a40; padding: .5rem .75rem;
+}
+.dz-preview { width: 52px; height: 52px; object-fit: cover; border-radius: 5px; flex-shrink: 0; }
+.dz-info { flex: 1; margin: 0 .75rem; overflow: hidden; }
+.dz-name { display: block; font-size: .78rem; color: #c0c0d8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dz-size { font-size: .68rem; color: #555570; }
+.dz-clear { background: none; border: none; color: #444460; cursor: pointer; padding: .2rem; line-height: 1; }
+.dz-clear:hover { color: #e05050; }
 
 /* Semantic score badge */
 .score-badge {

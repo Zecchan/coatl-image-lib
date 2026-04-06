@@ -86,6 +86,10 @@
           <span class="meta-val">{{ media.mediasourceName }}</span>
           <span class="meta-key">Added</span>
           <span class="meta-val">{{ formatDate(media.created_at) }}</span>
+          <span class="meta-key">Embedded</span>
+          <span class="meta-val" :style="media.qdrant_indexed_at ? '' : 'color:#555570'">
+            {{ media.qdrant_indexed_at ? formatDate(media.qdrant_indexed_at) : 'Not indexed' }}
+          </span>
         </div>
 
         <!-- Stars -->

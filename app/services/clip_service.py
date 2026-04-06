@@ -23,6 +23,10 @@ class ClipService:
 
     def embed_image(self, image_path: str) -> list:
         image = Image.open(image_path).convert("RGB")
+        return self.embed_image_pil(image)
+
+    def embed_image_pil(self, image) -> list:
+        """Embed a PIL Image directly (avoids disk round-trip)."""
         img_tensor = self._preprocess(image).unsqueeze(0)
         with torch.no_grad():
             features = self._model.encode_image(img_tensor)

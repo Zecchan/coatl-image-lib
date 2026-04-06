@@ -101,11 +101,20 @@ class QdrantService:
         )
 
     def search_by_text(self, text: str, limit: int = 20) -> List[dict]:
-        """Embed text query and return top media_uid groups ordered by best score."""
+        """Embed text query and search Qdrant."""
         self.ensure_collection()
-        client = self._get_client()
-
         query_vector = clip_service.embed_text(text)
+        return self.search_by_vector(query_vector, limit)
+
+    def search_by_image(self, pil_image, limit: int = 20) -> List[dict]:
+        """Embed a PIL image and search Qdrant."""
+        self.ensure_collection()
+        query_vector = clip_service.embed_image_pil(pil_image)
+        return self.search_by_vector(query_vector, limit)
+
+    def search_by_vector(self, query_vector: List[float], limit: int = 20) -> List[dict]:
+        """Run a Qdrant nearest-neighbour search and group results by media_uid."""
+        client = self._get_client()
 
         # Fetch limit*10 candidates then group by media_uid in Python
         response = client.query_points(

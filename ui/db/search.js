@@ -91,4 +91,57 @@ router.post('/', async (req, res) => {
   res.json({ results });
 });
 
+// POST /db/search/by-image
+// Body: { image_base64, limit?, mediatypeUids?, maxRating? }
+// The browser must pre-resize to ≤512px before encoding — keeps payload tiny regardless of source size.
+router.post('/by-image', async (req, res) => {
+  const { image_base64, limit = 20, mediatypeUids = [], maxRating = 'explicit' } = req.body ?? {};
+  if (!image_base64?.trim()) return res.status(400).json({ error: 'image_base64 is required' });
+
+  const apiPort = parseInt(process.env.API_PORT) || 8000;
+  let hits;
+  try {
+    const r = await fetch(`http://127.0.0.1:${apiPort}/search_by_image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_base64, limit }),
+    });
+    if (!r.ok) return res.status(502).json({ error: 'Python API error' });
+    const data = await r.json();
+    hits = data.results;
+  } catch (e) {
+    return res.status(502).json({ error: `Could not reach Python API: ${e.message}` });
+  }
+
+  if (!hits.length) return res.json({ results: [] });
+
+  const db = getDb();
+  const scoreMap = {};
+  const uids = hits.map(h => { scoreMap[h.media_uid] = h.score; return h.media_uid; });
+
+  const whereClauses = [`m.uid IN (${uids.map(() => '?').join(',')})`];
+  const params = [...uids];
+
+  if (mediatypeUids.length) {
+    whereClauses.push(`mt.uid IN (${mediatypeUids.map(() => '?').join(',')})`);
+    params.push(...mediatypeUids);
+  }
+
+  const maxRatingIdx = RATING_ORDER.indexOf(maxRating);
+  if (maxRatingIdx >= 0 && maxRatingIdx < RATING_ORDER.length - 1) {
+    const allowed = RATING_ORDER.slice(0, maxRatingIdx + 1);
+    whereClauses.push(`m.content_rating IN (${allowed.map(() => '?').join(',')})`);
+    params.push(...allowed);
+  }
+
+  const rows = db.prepare(SELECT_MEDIA + ' WHERE ' + whereClauses.join(' AND ')).all(...params);
+  const withTags = attachTags(db, rows);
+
+  const scoreOrder = Object.fromEntries(uids.map((u, i) => [u, i]));
+  withTags.sort((a, b) => (scoreOrder[a.uid] ?? 999) - (scoreOrder[b.uid] ?? 999));
+  const results = withTags.map(r => ({ ...r, semanticScore: scoreMap[r.uid] ?? 0 }));
+
+  res.json({ results });
+});
+
 module.exports = router;

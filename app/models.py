@@ -1,0 +1,20 @@
+from pydantic import BaseModel
+from typing import List, Optional
+
+
+class TextRequest(BaseModel):
+    text: str
+
+
+class ImageRequest(BaseModel):
+    image_path: str
+
+
+class TagRequest(BaseModel):
+    image_path: str
+    threshold: Optional[float] = 0.35
+
+
+class AnalyzeRequest(BaseModel):
+    folder_path: str
+    images: List[str]

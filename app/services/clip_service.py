@@ -1,3 +1,5 @@
+import io
+import subprocess
 import torch
 import open_clip
 import numpy as np
@@ -32,6 +34,40 @@ class ClipService:
             features = self._model.encode_image(img_tensor)
             features = features / features.norm(dim=-1, keepdim=True)
         return features[0].tolist()
+
+    def extract_frames_ffmpeg(self, video_path: str, timestamps: list) -> list:
+        """Extract frames at given timestamps from a video using ffmpeg.
+
+        Frames are piped directly to PIL Image objects — no temp files on disk.
+        Returns a list of PIL.Image (RGB). Skips timestamps where extraction fails.
+        """
+        images = []
+        for t in timestamps:
+            try:
+                result = subprocess.run(
+                    [
+                        'ffmpeg', '-y',
+                        '-ss', str(t),
+                        '-i', video_path,
+                        '-vframes', '1',
+                        '-f', 'image2',
+                        '-vcodec', 'png',
+                        'pipe:1',
+                    ],
+                    capture_output=True,
+                    timeout=15,
+                )
+                if result.returncode == 0 and result.stdout:
+                    img = Image.open(io.BytesIO(result.stdout)).convert('RGB')
+                    images.append(img)
+                else:
+                    print(f'[extract_frames] ffmpeg returncode={result.returncode} at t={t} for {video_path}')
+                    if result.stderr:
+                        print(f'[extract_frames] stderr: {result.stderr[-300:].decode(errors="replace")}')
+            except Exception as e:
+                print(f'[extract_frames] exception at t={t} for {video_path}: {e}')
+                continue
+        return images
 
 
 clip_service = ClipService()

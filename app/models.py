@@ -33,3 +33,8 @@ class SearchRequest(BaseModel):
 class ImageSearchRequest(BaseModel):
     image_base64: str
     limit: Optional[int] = 20
+
+
+class VideoIndexRequest(BaseModel):
+    media_uid: str
+    video_paths: List[str]

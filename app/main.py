@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.models import TextRequest, ImageRequest, TagRequest, AnalyzeRequest, IndexRequest, SearchRequest, ImageSearchRequest
+from app.models import TextRequest, ImageRequest, TagRequest, AnalyzeRequest, IndexRequest, SearchRequest, ImageSearchRequest, VideoIndexRequest
 from app.services.clip_service import clip_service
 from app.services.image_service import analyze_image
 from app.services.caption_service import caption_service
@@ -76,6 +76,13 @@ def analyze(req: AnalyzeRequest):
 @app.post("/index_media")
 def index_media(req: IndexRequest):
     count = qdrant_service.index_media(req.media_uid, req.image_paths)
+    return {"indexed": count, "media_uid": req.media_uid}
+
+
+# INDEX VIDEO COLLECTION INTO QDRANT (extracts frames via ffmpeg internally)
+@app.post("/index_video")
+def index_video(req: VideoIndexRequest):
+    count = qdrant_service.index_video_media(req.media_uid, req.video_paths)
     return {"indexed": count, "media_uid": req.media_uid}
 
 

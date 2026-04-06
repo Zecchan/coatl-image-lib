@@ -46,7 +46,7 @@
     <!-- Results -->
     <template v-if="result">
       <p class="results-meta">
-        Found <strong>{{ result.total }}</strong> image{{ result.total === 1 ? '' : 's' }} in
+        Found <strong>{{ result.total }}</strong> {{ result.isVideo ? 'video' : 'image' }}{{ result.total === 1 ? '' : 's' }} in
         <code>{{ result.dir }}</code>
         <span v-if="result.total > 12"> — showing {{ result.samples.length }} samples</span>
       </p>
@@ -61,7 +61,7 @@
         </div>
       </div>
 
-      <p v-else class="empty-hint">No images found in that path.</p>
+      <p v-else class="empty-hint">No {{ result.isVideo ? 'videos' : 'images' }} found in that path.</p>
 
       <!-- Tagging analysis -->
       <div v-if="tagging" class="analysis-card" style="margin-top:1.25rem">
@@ -137,7 +137,7 @@
 import { ref, computed, onMounted, reactive } from 'vue'
 import { ChevronLeft, ChevronDown, FolderOpen, Search, RotateCw, Save } from 'lucide-vue-next'
 import { API_BASE } from '../api.js'
-import { MEDIA_TYPE_IMAGE_COLLECTION } from '../mediatypeEnum.js'
+import { MEDIA_TYPE_IMAGE_COLLECTION, MEDIA_TYPE_VIDEO_COLLECTION } from '../mediatypeEnum.js'
 import MediaEntryForm from '../components/MediaEntryForm.vue'
 
 const sources           = ref([])
@@ -212,7 +212,7 @@ async function load() {
     const res  = await fetch('/scan/preview', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ dir }),
+      body:    JSON.stringify({ dir, mediatypeType: selectedSourceType.value }),
     })
     const data = await res.json()
     if (!res.ok) { error.value = data.error || 'Scan failed.'; return }
@@ -274,6 +274,15 @@ async function runTagging(samples) {
     tagExpanded.value = true
   } finally {
     tagging.value = false
+    // Clean up video preview temp dir (fire-and-forget)
+    const tempDir = result.value?.tempDir
+    if (tempDir) {
+      fetch('/scan/preview-temp', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tempDir }),
+      }).catch(() => {})
+    }
   }
 }
 
@@ -296,8 +305,11 @@ function openSave() {
     ? Object.entries(tagResult.value.ratings).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'general'
     : 'general'
 
-  // Cover = first sample filename
-  const cover = result.value?.samples?.[0]?.name ?? ''
+  // Cover: for video collections the server will extract cover.jpg at save time;
+  // for image collections use the first sample filename.
+  const cover = selectedSourceType.value === MEDIA_TYPE_VIDEO_COLLECTION
+    ? 'cover.jpg'
+    : (result.value?.samples?.[0]?.name ?? '')
 
   // Pre-fill tags from analysis (top 40)
   const tags = [
@@ -309,9 +321,12 @@ function openSave() {
   const page_count = selectedSourceType.value === MEDIA_TYPE_IMAGE_COLLECTION
     ? (result.value?.total ?? null)
     : null
+  const track_count = selectedSourceType.value === MEDIA_TYPE_VIDEO_COLLECTION
+    ? (result.value?.total ?? null)
+    : null
 
   Object.assign(saveModal.form, defaultForm(), {
-    path: relPath, cover, title, artist, content_rating: dominantRating, tags, page_count,
+    path: relPath, cover, title, artist, content_rating: dominantRating, tags, page_count, track_count,
   })
   saveModal.error   = ''
   saveModal.saving  = false
@@ -320,8 +335,8 @@ function openSave() {
 
 async function doSave() {
   if (!saveModal.form.title.trim()) { saveModal.error = 'Title is required.'; return }
-  if (selectedSourceType.value === 1 && !saveModal.form.artist?.trim() && !saveModal.form.series?.trim()) {
-    saveModal.error = 'Artist or Circle/Series is required for Image Collection.'; return
+  if ((selectedSourceType.value === 1 || selectedSourceType.value === 2) && !saveModal.form.artist?.trim() && !saveModal.form.series?.trim()) {
+    saveModal.error = `Artist or Circle/Series is required for ${selectedSourceType.value === 1 ? 'Image' : 'Video'} Collection.`; return
   }
   saveModal.saving = true
   saveModal.error  = ''

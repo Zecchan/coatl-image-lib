@@ -7,7 +7,8 @@
         <label class="field-label">Folder Path <span class="req">*</span></label>
         <input v-model="form.path" type="text" class="field" placeholder="relative to media source root" />
       </div>
-      <div class="field-group flex-1">
+      <!-- Video Collection: cover auto-generated at save time, no need to show the field -->
+      <div v-if="mediatypeType !== 2" class="field-group flex-1">
         <label class="field-label">Cover Image</label>
         <input v-model="form.cover" type="text" class="field" placeholder="filename, abs path, or URL" />
       </div>
@@ -18,7 +19,15 @@
     <div class="modal-row">
       <div class="field-group flex-1">
         <label class="field-label">Cover Image</label>
-        <input v-model="form.cover" type="text" class="field" placeholder="filename, abs path, or URL" />
+        <!-- Video: file upload; will be saved as cover.jpg on the server -->
+        <template v-if="mediatypeType === 2">
+          <label class="cover-upload-btn">
+            <input type="file" accept="image/*" style="display:none" @change="onCoverFileChange" />
+            <span>{{ coverFileName || 'Choose image…' }}</span>
+          </label>
+          <span v-if="coverFileName" style="font-size:.68rem;color:#555570;margin-top:.2rem">Will be saved as cover.jpg</span>
+        </template>
+        <input v-else v-model="form.cover" type="text" class="field" placeholder="filename, abs path, or URL" />
       </div>
     </div>
   </template>
@@ -37,21 +46,21 @@
   <div class="modal-row" style="margin-top:.5rem">
     <div class="field-group flex-1">
       <label class="field-label">
-        Artist / Author
-        <span v-if="mediatypeType === 1" class="req">*</span>
+        {{ artistLabel }}
+        <span v-if="mediatypeType === 1 || mediatypeType === 2" class="req">*</span>
       </label>
       <input v-model="form.artist" type="text" class="field" />
     </div>
     <div class="field-group flex-1">
       <label class="field-label">
-        Series / Circle
-        <span v-if="mediatypeType === 1" class="req">*</span>
+        {{ circleLabel }}
+        <span v-if="mediatypeType === 1 || mediatypeType === 2" class="req">*</span>
       </label>
       <input v-model="form.series" type="text" class="field" />
     </div>
   </div>
-  <p v-if="showPath && mediatypeType === 1" style="font-size:.72rem;color:#555570;margin:.35rem 0 0">
-    At least one of Artist or Circle is required — used to build the folder path.
+  <p v-if="showPath && (mediatypeType === 1 || mediatypeType === 2)" style="font-size:.72rem;color:#555570;margin:.35rem 0 0">
+    At least one of {{ artistLabel }} or {{ circleLabel }} is required — used to build the folder path.
   </p>
 
   <div class="modal-section-label" style="margin-top:1rem">Classification</div>
@@ -97,32 +106,24 @@
     </div>
   </template>
 
-  <!-- Game -->
+  <!-- Video Collection -->
   <template v-if="mediatypeType === 2">
-    <div class="modal-section-label" style="margin-top:1rem">Game</div>
+    <div class="modal-section-label" style="margin-top:1rem">Video Collection</div>
     <div class="modal-row">
-      <div class="field-group flex-1">
-        <label class="field-label">Developer</label>
-        <input v-model="form.developer" type="text" class="field" />
-      </div>
-      <div class="field-group flex-1">
-        <label class="field-label">Publisher</label>
-        <input v-model="form.publisher" type="text" class="field" />
-      </div>
       <div class="field-group">
-        <label class="field-label">Release Date</label>
-        <input v-model="form.release_date" type="text" class="field" style="width:130px" placeholder="YYYY-MM-DD" />
+        <label class="field-label">Video Count</label>
+        <input v-model.number="form.track_count" type="number" min="0" class="field" style="width:100px" readonly />
       </div>
-      <div class="field-group">
-        <label class="field-label">Platform</label>
-        <input v-model="form.platform" type="text" class="field" style="width:110px" />
+      <div class="field-group flex-1">
+        <label class="field-label">Source URL</label>
+        <input v-model="form.source_url" type="text" class="field" placeholder="https://..." />
       </div>
     </div>
   </template>
 
-  <!-- Video / Music -->
+  <!-- Music Collection -->
   <template v-if="mediatypeType === 3">
-    <div class="modal-section-label" style="margin-top:1rem">Video / Music</div>
+    <div class="modal-section-label" style="margin-top:1rem">Music Collection</div>
     <div class="modal-row">
       <div class="field-group">
         <label class="field-label">Duration (sec)</label>
@@ -163,13 +164,28 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
 const props = defineProps({
   form: { type: Object, required: true },
   mediatypeType: { type: Number, default: null },
   showPath: { type: Boolean, default: true },
 })
+
+const emit = defineEmits(['cover-file'])
+
+const coverFileName = ref('')
+
+function onCoverFileChange(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+  coverFileName.value = file.name
+  emit('cover-file', file)
+}
+
+// Artist and circle/series labels vary by media type
+const artistLabel = computed(() => props.mediatypeType === 1 ? 'Artist' : 'Author')
+const circleLabel = computed(() => props.mediatypeType === 1 ? 'Circle' : 'Series')
 
 const newTagInput = ref('')
 
@@ -200,6 +216,15 @@ function removeTag(tagName) {
 .req { color: #f87171; }
 .field-group { display: flex; flex-direction: column; gap: .3rem; }
 .field-label  { font-size: .72rem; color: #666680; }
+
+.cover-upload-btn {
+  display: inline-flex; align-items: center;
+  padding: .35rem .75rem; border-radius: 6px;
+  border: 1px dashed #333348; background: #0f0f1a;
+  color: #8080a8; font-size: .78rem; cursor: pointer;
+  transition: border-color .12s, color .12s;
+}
+.cover-upload-btn:hover { border-color: #7c5cbf; color: #b090e8; }
 
 .stars-row { display: flex; align-items: center; gap: .2rem; }
 .star-btn {

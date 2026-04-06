@@ -2,17 +2,17 @@
 
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const crypto = require('crypto');
+const { spawnSync } = require('child_process');
 const Router = require('express').Router;
 const { getDb, uid } = require('./schema');
 
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif', '.avif']);
+const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.webm', '.avi', '.mov', '.wmv', '.flv', '.m4v', '.ts', '.m2ts']);
 
-function isImage(name) {
-  return IMAGE_EXTS.has(path.extname(name).toLowerCase());
-}
-
-// Walk directory recursively, collect absolute paths of image files sorted by full path.
-function walkImages(dir) {
+// Walk directory recursively, collect absolute paths of files matching extSet, sorted by path.
+function walkFiles(dir, extSet) {
   const results = [];
   function walk(current) {
     let entries;
@@ -21,12 +21,15 @@ function walkImages(dir) {
     for (const e of entries) {
       const full = path.join(current, e.name);
       if (e.isDirectory()) walk(full);
-      else if (e.isFile() && isImage(e.name)) results.push(full);
+      else if (e.isFile() && extSet.has(path.extname(e.name).toLowerCase())) results.push(full);
     }
   }
   walk(dir);
   return results;
 }
+
+function walkImages(dir) { return walkFiles(dir, IMAGE_EXTS); }
+function walkVideos(dir) { return walkFiles(dir, VIDEO_EXTS); }
 
 // Returns first image + up to (n-1) random samples from the rest, total <= n.
 function sampleImages(files, n) {
@@ -39,6 +42,175 @@ function sampleImages(files, n) {
     [rest[i], rest[j]] = [rest[j], rest[i]];
   }
   return [first, ...rest.slice(0, n - 1)];
+}
+
+// ── Video frame helpers ───────────────────────────────────────────────────────
+
+/**
+ * Returns video duration in seconds, or null on failure.
+ * Throws with a clear message if ffprobe is not installed.
+ */
+function getVideoDuration(videoPath) {
+  let result;
+  try {
+    result = spawnSync('ffprobe', [
+      '-v', 'quiet', '-print_format', 'json', '-show_streams', '-show_format', videoPath,
+    ], { encoding: 'utf8', timeout: 10000 });
+  } catch (e) {
+    if (e.code === 'ENOENT') throw new Error('ffprobe not found — install ffmpeg and add it to PATH.');
+    return null;
+  }
+  if (result.error) {
+    if (result.error.code === 'ENOENT') throw new Error('ffprobe not found — install ffmpeg and add it to PATH.');
+    return null;
+  }
+  try {
+    const data = JSON.parse(result.stdout);
+    const stream = data.streams?.find(s => s.codec_type === 'video') ?? data.streams?.[0];
+    // Prefer stream-level duration; fall back to container format duration (many MKV/AVI files only have it there)
+    const dur = parseFloat(stream?.duration) || parseFloat(data.format?.duration);
+    return isFinite(dur) && dur > 0 ? dur : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Extract a single frame at `seconds` into outputPath (JPEG). Returns true on success. */
+function extractFrame(videoPath, outputPath, seconds) {
+  try {
+    const result = spawnSync('ffmpeg', [
+      '-y', '-ss', String(seconds), '-i', videoPath,
+      '-vframes', '1', '-q:v', '2', outputPath,
+    ], { timeout: 15000 });
+    return result.status === 0 && !result.error && fs.existsSync(outputPath);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Sample up to n frames from the given video files into tempDir.
+ *
+ * Prioritises breadth over depth: collects one frame from every video before
+ * collecting a second frame from any video.
+ * framesPerVideo is pre-calculated as ceil(n / videos.length) so the budget
+ * is distributed evenly upfront.
+ * Timestamps are evenly spaced across the 10–90% range of each video's duration.
+ *
+ * Returns [{name, abs}] — same shape as image samples.
+ */
+function sampleVideoFrames(videos, n, tempDir) {
+  if (!videos.length) return [];
+  fs.mkdirSync(tempDir, { recursive: true });
+
+  const framesPerVideo = Math.max(1, Math.ceil(n / videos.length));
+
+  // Shuffle for variety
+  const shuffled = [...videos];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
+  // Pre-fetch all durations up front (one ffprobe call per video).
+  // Re-throw on the first call so callers get a real error (e.g. ffprobe not found)
+  // instead of silently returning 0 frames.
+  let firstProbe = true;
+  const durations = shuffled.map(v => {
+    try {
+      const d = getVideoDuration(v);
+      firstProbe = false;
+      return d;
+    } catch (e) {
+      if (firstProbe) throw e; // surface the error (e.g. "ffprobe not found")
+      firstProbe = false;
+      return null;
+    }
+  });
+
+  const samples = [];
+  let frameIdx = 0;
+
+  // Round-robin passes: pass 0 = 1st frame from each video, pass 1 = 2nd, …
+  for (let passIdx = 0; passIdx < framesPerVideo && samples.length < n; passIdx++) {
+    for (let vi = 0; vi < shuffled.length && samples.length < n; vi++) {
+      const duration = durations[vi];
+      if (!duration) continue;
+
+      // Timestamp evenly distributed for this pass within 10–90% of duration
+      const rangeStart = duration * 0.1;
+      const rangeEnd = duration * 0.9;
+      const t = rangeStart + (rangeEnd - rangeStart) * ((passIdx + 0.5) / framesPerVideo);
+
+      const stem = path.basename(shuffled[vi], path.extname(shuffled[vi])).slice(0, 40);
+      const outPath = path.join(tempDir, `frame_${frameIdx++}_${stem}.jpg`);
+      if (extractFrame(shuffled[vi], outPath, t)) {
+        samples.push({ name: path.basename(outPath), abs: outPath });
+      }
+    }
+  }
+
+  return samples;
+}
+
+/** Remove stale coatl-preview-* temp dirs (older than 1 hour). */
+function cleanStalePreviewDirs() {
+  const tmpBase = os.tmpdir();
+  const ONE_HOUR = 60 * 60 * 1000;
+  try {
+    for (const e of fs.readdirSync(tmpBase, { withFileTypes: true })) {
+      if (!e.isDirectory() || !e.name.startsWith('coatl-preview-')) continue;
+      const full = path.join(tmpBase, e.name);
+      try {
+        if (Date.now() - fs.statSync(full).mtimeMs > ONE_HOUR) {
+          fs.rmSync(full, { recursive: true, force: true });
+        }
+      } catch { }
+    }
+  } catch { }
+}
+
+// ── Post-save Qdrant indexing ─────────────────────────────────────────────────
+
+function indexImageCollection(newUid, destDir) {
+  const imagePaths = walkImages(destDir);
+  if (!imagePaths.length) return;
+  const apiPort = parseInt(process.env.API_PORT) || 8000;
+  fetch(`http://127.0.0.1:${apiPort}/index_media`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ media_uid: newUid, image_paths: imagePaths }),
+  }).then(r => {
+    if (r.ok) {
+      getDb().prepare("UPDATE medias SET qdrant_indexed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE uid = ?")
+        .run(newUid);
+    }
+  }).catch(e => console.warn('[qdrant] index_media failed:', e.message));
+}
+
+function indexVideoCollection(newUid, destDir) {
+  const videoPaths = walkVideos(destDir);
+  if (!videoPaths.length) return;
+  const apiPort = parseInt(process.env.API_PORT) || 8000;
+  fetch(`http://127.0.0.1:${apiPort}/index_video`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ media_uid: newUid, video_paths: videoPaths }),
+  }).then(async r => {
+    if (r.ok) {
+      const data = await r.json();
+      const indexed = data.indexed ?? 0;
+      console.log(`[qdrant] index_video uid=${newUid}: ${indexed} points from ${videoPaths.length} video(s)`);
+      if (indexed > 0) {
+        getDb().prepare("UPDATE medias SET qdrant_indexed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE uid = ?")
+          .run(newUid);
+      } else {
+        console.warn(`[qdrant] index_video uid=${newUid}: 0 points indexed — check Python logs`);
+      }
+    } else {
+      console.warn(`[qdrant] index_video uid=${newUid}: HTTP ${r.status}`);
+    }
+  }).catch(e => console.warn('[qdrant] index_video failed:', e.message));
 }
 
 const router = Router();
@@ -63,34 +235,75 @@ function copyDirSync(src, dest) {
   }
 }
 
-// POST /preview  { dir: string }
-// Returns { total, dir, samples: [{name, abs}] }
-router.post('/preview', (req, res) => {
-  const { dir } = req.body ?? {};
-  if (!dir || typeof dir !== 'string') {
-    return res.status(400).json({ error: 'dir is required' });
-  }
-
+// POST /preview  { dir, mediatypeType }
+// Dispatches to type-specific handler. Returns { total, dir, samples: [{name, abs}], ... }
+function previewImageCollection(req, res) {
+  const { dir } = req.body;
   const absDir = path.resolve(dir);
-
   let stat;
-  try {
-    stat = fs.statSync(absDir);
-  } catch {
-    return res.status(404).json({ error: 'Directory not found' });
-  }
-  if (!stat.isDirectory()) {
-    return res.status(400).json({ error: 'Path is not a directory' });
-  }
+  try { stat = fs.statSync(absDir); } catch { return res.status(404).json({ error: 'Directory not found' }); }
+  if (!stat.isDirectory()) return res.status(400).json({ error: 'Path is not a directory' });
 
   const all = walkImages(absDir);
   const samples = sampleImages(all, 12);
-
   res.json({
     total: all.length,
     dir: absDir,
     samples: samples.map(f => ({ name: path.relative(absDir, f), abs: f })),
   });
+}
+
+function previewVideoCollection(req, res) {
+  const { dir } = req.body;
+  const absDir = path.resolve(dir);
+  let stat;
+  try { stat = fs.statSync(absDir); } catch { return res.status(404).json({ error: 'Directory not found' }); }
+  if (!stat.isDirectory()) return res.status(400).json({ error: 'Path is not a directory' });
+
+  cleanStalePreviewDirs();
+  const all = walkVideos(absDir);
+  console.log(`[preview-video] found ${all.length} video(s) in ${absDir}`);
+  if (!all.length) {
+    return res.json({ total: 0, dir: absDir, samples: [], tempDir: null, isVideo: true });
+  }
+
+  const tempDir = path.join(os.tmpdir(), `coatl-preview-${crypto.randomBytes(8).toString('hex')}`);
+  let samples;
+  try {
+    samples = sampleVideoFrames(all, 12, tempDir);
+    console.log(`[preview-video] extracted ${samples.length} frame(s) into ${tempDir}`);
+  } catch (e) {
+    console.error('[preview-video] error:', e.message);
+    return res.status(500).json({ error: e.message });
+  }
+  res.json({ total: all.length, dir: absDir, samples, tempDir, isVideo: true });
+}
+
+router.post('/preview', (req, res) => {
+  const { dir, mediatypeType } = req.body ?? {};
+  if (!dir || typeof dir !== 'string') return res.status(400).json({ error: 'dir is required' });
+  switch (mediatypeType) {
+    case 2: return previewVideoCollection(req, res);
+    case 1:
+    default: return previewImageCollection(req, res);
+  }
+});
+
+// DELETE /preview-temp  { tempDir }
+// Cleans up a coatl-preview-* temp directory created during video preview.
+router.delete('/preview-temp', (req, res) => {
+  const { tempDir } = req.body ?? {};
+  if (!tempDir || typeof tempDir !== 'string') return res.status(400).json({ error: 'tempDir required' });
+  const resolved = path.resolve(tempDir);
+  if (!resolved.startsWith(os.tmpdir()) || !path.basename(resolved).startsWith('coatl-preview-')) {
+    return res.status(403).json({ error: 'Invalid temp path' });
+  }
+  try {
+    fs.rmSync(resolved, { recursive: true, force: true });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // GET /image?f=<absolute-path>
@@ -194,9 +407,11 @@ router.post('/save', (req, res) => {
   if (!source) return res.status(404).json({ error: 'mediasource not found' });
 
   // Type-specific validation
-  if (source.mediatype_type === 1) {
+  if (source.mediatype_type === 1 || source.mediatype_type === 2) {
     if (!form.artist?.trim() && !form.series?.trim())
-      return res.status(400).json({ error: 'Artist or Circle/Series is required for Image Collection' });
+      return res.status(400).json({
+        error: `Artist or Circle/Series is required for ${source.mediatype_type === 1 ? 'Image' : 'Video'} Collection`,
+      });
   }
 
   // Compute canonical destination path
@@ -233,6 +448,27 @@ router.post('/save', (req, res) => {
     }
   }
 
+  // For Video Collections: extract a frame from the first video as cover.jpg in destDir.
+  // This runs after the folder is in place so destDir always contains the final content.
+  let coverValue = form.cover || '';
+  if (source.mediatype_type === 2) {
+    try {
+      const vids = walkVideos(destDir);
+      if (vids.length) {
+        const dur = getVideoDuration(vids[0]);
+        if (dur) {
+          const coverPath = path.join(destDir, 'cover.jpg');
+          if (extractFrame(vids[0], coverPath, dur * 0.25)) {
+            coverValue = 'cover.jpg';
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[scan/save] cover extraction failed:', e.message);
+      // best-effort — proceed without cover
+    }
+  }
+
   // Upsert tags by name, return their ids
   function upsertTags(names) {
     const ins = db.prepare('INSERT OR IGNORE INTO tags (name) VALUES (?)');
@@ -256,7 +492,7 @@ router.post('/save', (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       newUid, source.id,
-      form.title.trim(), form.original_title || '', relPath, form.cover || '',
+      form.title.trim(), form.original_title || '', relPath, coverValue,
       content_rating, rating, form.summary || '',
       form.artist || '', form.source_url || '', form.series || '', form.page_count || null,
       form.developer || '', form.publisher || '', form.release_date || '', form.platform || '',
@@ -280,23 +516,10 @@ router.post('/save', (req, res) => {
 
   res.status(201).json({ ok: true, uid: newUid, path: relPath, destDir });
 
-  // Fire-and-forget: index images into Qdrant after responding
-  const imagePaths = walkImages(destDir);
-  if (imagePaths.length) {
-    const apiPort = parseInt(process.env.API_PORT) || 8000;
-    fetch(`http://127.0.0.1:${apiPort}/index_media`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ media_uid: newUid, image_paths: imagePaths }),
-    }).then(r => {
-      if (r.ok) {
-        const db2 = getDb();
-        db2.prepare("UPDATE medias SET qdrant_indexed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE uid = ?")
-          .run(newUid);
-      }
-    }).catch(e => {
-      console.warn('[qdrant] index_media failed after save:', e.message);
-    });
+  // Fire-and-forget: index into Qdrant after responding (per media type)
+  switch (source.mediatype_type) {
+    case 1: indexImageCollection(newUid, destDir); break;
+    case 2: indexVideoCollection(newUid, destDir); break;
   }
 });
 

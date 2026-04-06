@@ -1,5 +1,9 @@
+import io
+import json as _json
+import math
 import os
 import random
+import subprocess
 from typing import List
 
 from qdrant_client import QdrantClient
@@ -137,6 +141,85 @@ class QdrantService:
         hits = [{"media_uid": uid, **v} for uid, v in seen.items()]
         hits.sort(key=lambda x: x["score"], reverse=True)
         return hits[:limit]
+
+    def index_video_media(self, media_uid: str, video_paths: List[str]) -> int:
+        """Extract frames from videos and index their CLIP embeddings into Qdrant.
+
+        Strategy: at least 1 frame per video, distributing the total budget of
+        MAX_IMAGES_PER_MEDIA across all videos evenly (ceil division).
+        Timestamps are evenly spaced across 10%–90% of each video's duration.
+        """
+        self.ensure_collection()
+        client = self._get_client()
+
+        client.delete(
+            collection_name=COLLECTION_NAME,
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[FieldCondition(key="media_uid", match=MatchValue(value=media_uid))]
+                )
+            ),
+        )
+
+        n_videos = len(video_paths)
+        if not n_videos:
+            return 0
+
+        frames_per_video = max(1, math.ceil(MAX_IMAGES_PER_MEDIA / n_videos))
+
+        points: List[PointStruct] = []
+        point_idx = 0
+
+        for vid_path in video_paths:
+            try:
+                r = subprocess.run(
+                    ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', '-show_format', vid_path],
+                    capture_output=True, text=True, timeout=10,
+                )
+                data = _json.loads(r.stdout)
+                stream = next(
+                    (s for s in data.get('streams', []) if s.get('codec_type') == 'video'),
+                    data['streams'][0] if data.get('streams') else None,
+                )
+                # Prefer stream-level duration; fall back to container format duration
+                raw_dur = (stream or {}).get('duration') or data.get('format', {}).get('duration')
+                duration = float(raw_dur) if raw_dur else 0.0
+            except Exception as e:
+                print(f'[index_video] ffprobe failed for {vid_path}: {e}')
+                duration = 0.0
+
+            if duration <= 0:
+                print(f'[index_video] skipping (no duration): {vid_path}')
+                continue
+
+            range_start = duration * 0.1
+            range_end   = duration * 0.9
+            timestamps = [
+                range_start + (range_end - range_start) * ((i + 0.5) / frames_per_video)
+                for i in range(frames_per_video)
+            ]
+
+            frames = clip_service.extract_frames_ffmpeg(vid_path, timestamps)
+            print(f'[index_video] {vid_path}: duration={duration:.1f}s, {len(timestamps)} timestamps, {len(frames)} frames extracted')
+            for frame in frames:
+                try:
+                    embedding = clip_service.embed_image_pil(frame)
+                except Exception as e:
+                    print(f'[index_video] embed failed: {e}')
+                    continue
+
+                point_id = abs(hash(f"{media_uid}::v{point_idx}")) % (2**63)
+                points.append(PointStruct(
+                    id=point_id,
+                    vector=embedding,
+                    payload={"media_uid": media_uid, "video_path": vid_path},
+                ))
+                point_idx += 1
+
+        if points:
+            client.upsert(collection_name=COLLECTION_NAME, points=points)
+
+        return len(points)
 
     def collection_info(self) -> dict:
         try:

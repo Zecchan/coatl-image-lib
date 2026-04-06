@@ -1,8 +1,9 @@
 'use strict';
 
+const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const Router = require('express').Router;
+const Router = express.Router;
 const { getDb, uid } = require('./schema');
 
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif', '.avif']);
@@ -253,6 +254,41 @@ router.post('/', (req, res) => {
   res.status(201).json(attachTags(db, [created])[0]);
 });
 
+// ── POST /db/medias/:uid/cover ───────────────────────────────────────────────
+// Accepts a raw image body and saves it as cover.jpg in the media's folder.
+// Updates the DB cover field to 'cover.jpg'.
+router.post('/:uid/cover', express.raw({ type: '*/*', limit: '20mb' }), (req, res) => {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT m.path AS mediaPath, ms.path AS sourcePath
+    FROM medias m
+    JOIN mediasources ms ON ms.id = m.mediasource_id
+    WHERE m.uid = ?
+  `).get(req.params.uid);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+
+  if (!Buffer.isBuffer(req.body) || !req.body.length)
+    return res.status(400).json({ error: 'No file data received' });
+
+  const destDir = path.resolve(path.join(row.sourcePath, row.mediaPath));
+  const coverPath = path.join(destDir, 'cover.jpg');
+  try {
+    fs.writeFileSync(coverPath, req.body);
+  } catch (e) {
+    return res.status(500).json({ error: `Write failed: ${e.message}` });
+  }
+
+  try {
+    db.prepare("UPDATE medias SET cover = 'cover.jpg', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE uid = ?")
+      .run(req.params.uid);
+  } catch (e) {
+    return res.status(500).json({ error: `DB update failed: ${e.message}` });
+  }
+
+  const updated = db.prepare(SELECT_MEDIA + ' WHERE m.uid = ?').get(req.params.uid);
+  res.json(attachTags(db, [updated])[0]);
+});
+
 // ── PUT /db/medias/:uid ───────────────────────────────────────────────────────
 router.put('/:uid', (req, res) => {
   const db = getDb();
@@ -321,35 +357,76 @@ router.put('/:uid', (req, res) => {
 });
 
 // ── POST /db/medias/:uid/reindex ────────────────────────────────────────────
-// Responds immediately (202), then indexes images into Qdrant in the background.
+// Responds immediately (202), then re-indexes into Qdrant in the background.
+// Works for both image (type 1) and video (type 2) collections.
 router.post('/:uid/reindex', async (req, res) => {
   const db = getDb();
   const row = db.prepare(`
-    SELECT m.path AS mediaPath, ms.path AS sourcePath
+    SELECT m.path AS mediaPath, ms.path AS sourcePath, mt.type AS mediatypeType
     FROM medias m
     JOIN mediasources ms ON ms.id = m.mediasource_id
+    JOIN mediatypes  mt ON mt.id = ms.mediatype_id
     WHERE m.uid = ?
   `).get(req.params.uid);
   if (!row) return res.status(404).json({ error: 'Not found' });
 
   const absDir = path.resolve(path.join(row.sourcePath, row.mediaPath));
-  const imagePaths = walkImages(absDir);
-  res.status(202).json({ ok: true, queued: imagePaths.length });
-
-  if (!imagePaths.length) return;
   const apiPort = parseInt(process.env.API_PORT) || 8000;
-  try {
-    const r = await fetch(`http://127.0.0.1:${apiPort}/index_media`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ media_uid: req.params.uid, image_paths: imagePaths }),
-    });
-    if (r.ok) {
-      db.prepare("UPDATE medias SET qdrant_indexed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE uid = ?")
-        .run(req.params.uid);
+
+  if (row.mediatypeType === 2) {
+    // Video collection
+    const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.webm', '.avi', '.mov', '.wmv', '.flv', '.m4v', '.ts', '.m2ts']);
+    function walkVideos(dir) {
+      const results = [];
+      function walk(current) {
+        let entries; try { entries = require('fs').readdirSync(current, { withFileTypes: true }); } catch { return; }
+        entries.sort((a, b) => a.name.localeCompare(b.name));
+        for (const e of entries) {
+          const full = path.join(current, e.name);
+          if (e.isDirectory()) walk(full);
+          else if (e.isFile() && VIDEO_EXTS.has(path.extname(e.name).toLowerCase())) results.push(full);
+        }
+      }
+      walk(dir);
+      return results;
     }
-  } catch (e) {
-    console.warn('[qdrant] reindex failed:', e.message);
+    const videoPaths = walkVideos(absDir);
+    res.status(202).json({ ok: true, queued: videoPaths.length });
+    if (!videoPaths.length) return;
+    try {
+      const r = await fetch(`http://127.0.0.1:${apiPort}/index_video`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ media_uid: req.params.uid, video_paths: videoPaths }),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        if ((data.indexed ?? 0) > 0) {
+          db.prepare("UPDATE medias SET qdrant_indexed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE uid = ?")
+            .run(req.params.uid);
+        }
+      }
+    } catch (e) {
+      console.warn('[qdrant] reindex video failed:', e.message);
+    }
+  } else {
+    // Image collection
+    const imagePaths = walkImages(absDir);
+    res.status(202).json({ ok: true, queued: imagePaths.length });
+    if (!imagePaths.length) return;
+    try {
+      const r = await fetch(`http://127.0.0.1:${apiPort}/index_media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ media_uid: req.params.uid, image_paths: imagePaths }),
+      });
+      if (r.ok) {
+        db.prepare("UPDATE medias SET qdrant_indexed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE uid = ?")
+          .run(req.params.uid);
+      }
+    } catch (e) {
+      console.warn('[qdrant] reindex image failed:', e.message);
+    }
   }
 });
 

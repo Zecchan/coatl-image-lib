@@ -44,22 +44,29 @@
             </span>
           </template>
 
-          <!-- Type 2: Game -->
+          <!-- Type 2: Video Collection -->
           <template v-else-if="media.mediatypeType === 2">
-            <span class="meta-key">Developer</span>
-            <span class="meta-val">{{ media.developer || '—' }}</span>
-            <span class="meta-key">Publisher</span>
-            <span class="meta-val">{{ media.publisher || '—' }}</span>
-            <span class="meta-key">Platform</span>
-            <span class="meta-val">{{ media.platform || '—' }}</span>
-            <span class="meta-key">Released</span>
-            <span class="meta-val">{{ media.release_date || '—' }}</span>
+            <span class="meta-key">Artist</span>
+            <span class="meta-val">{{ media.artist || '—' }}</span>
+            <span class="meta-key">Series</span>
+            <span class="meta-val">{{ media.series || '—' }}</span>
+            <span class="meta-key">Videos</span>
+            <span class="meta-val">{{ media.track_count || '—' }}</span>
             <span class="meta-key">Language</span>
             <span class="meta-val">{{ media.language || '—' }}</span>
+            <span class="meta-key">Source</span>
+            <span class="meta-val">
+              <a v-if="media.source_url" :href="media.source_url" target="_blank" rel="noopener" class="link">{{ media.source_url }}</a>
+              <span v-else>—</span>
+            </span>
           </template>
 
-          <!-- Type 3: Video / Music -->
+          <!-- Type 3: Music Collection -->
           <template v-else-if="media.mediatypeType === 3">
+            <span class="meta-key">Artist</span>
+            <span class="meta-val">{{ media.artist || '—' }}</span>
+            <span class="meta-key">Series</span>
+            <span class="meta-val">{{ media.series || '—' }}</span>
             <span class="meta-key">Duration</span>
             <span class="meta-val">{{ media.duration || '—' }}</span>
             <span class="meta-key">Tracks</span>
@@ -133,15 +140,15 @@
           <button class="icon-close" :disabled="editModal.saving" @click="editModal.saving || (editModal.open = false)">✕</button>
         </div>
         <div class="modal-body">
-          <MediaEntryForm :form="editModal.form" :mediatypeType="media.mediatypeType" :show-path="false" />
+          <MediaEntryForm :form="editModal.form" :mediatypeType="media.mediatypeType" :show-path="false" @cover-file="f => coverFile = f" />
           <div v-if="editModal.error" class="error-msg" style="margin-top:.75rem">{{ editModal.error }}</div>
         </div>
         <div class="modal-footer">
-          <label v-if="media.mediatypeType === 1" class="reembed-check">
+          <label v-if="media.mediatypeType === 1 || media.mediatypeType === 2" class="reembed-check">
             <input type="checkbox" v-model="editModal.reembed" :disabled="editModal.saving" />
-            Re-embed images
+            {{ media.mediatypeType === 2 ? 'Re-embed videos' : 'Re-embed images' }}
           </label>
-          <button class="btn-secondary" :disabled="editModal.saving" @click="editModal.saving || (editModal.open = false)">Cancel</button>
+          <button class="btn-secondary" :disabled="editModal.saving" @click="editModal.saving || (editModal.open = false, coverFile = null)">Cancel</button>
           <button class="btn-primary" :disabled="editModal.saving" @click="doEdit">
             {{ editModal.saving ? 'Saving…' : 'Save Changes' }}
           </button>
@@ -152,7 +159,7 @@
 </template>
 
 <script setup>
-import { computed, reactive } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { ImageOff, Pencil } from 'lucide-vue-next'
 import MediaEntryForm from './MediaEntryForm.vue'
 
@@ -175,6 +182,8 @@ function formatDate(str) {
 }
 
 // ─── Edit modal ──────────────────────────────────────────────────────────────
+let coverFile = null  // File object set when user picks a new cover in video edit mode
+
 const editModal = reactive({
   open: false, saving: false, error: '', reembed: false,
   form: {
@@ -212,6 +221,7 @@ function openEdit() {
   })
   editModal.error = ''
   editModal.reembed = false
+  coverFile = null
   editModal.open = true
 }
 
@@ -220,6 +230,22 @@ async function doEdit() {
   editModal.saving = true
   editModal.error = ''
   try {
+    // If a new cover file was chosen (video edit), upload it first
+    if (coverFile) {
+      const uploadRes = await fetch(`/db/medias/${props.media.uid}/cover`, {
+        method: 'POST',
+        headers: { 'Content-Type': coverFile.type || 'application/octet-stream' },
+        body: coverFile,
+      })
+      if (!uploadRes.ok) {
+        const d = await uploadRes.json().catch(() => ({}))
+        editModal.error = d.error || 'Cover upload failed.'
+        return
+      }
+      editModal.form.cover = 'cover.jpg'
+      coverFile = null
+    }
+
     const res = await fetch(`/db/medias/${props.media.uid}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

@@ -113,157 +113,7 @@
           <button class="icon-close" :disabled="saveModal.saving" @click="saveModal.saving || (saveModal.open = false)">✕</button>
         </div>
         <div class="save-modal-body">
-
-          <div class="modal-section-label">Paths</div>
-          <div class="modal-row">
-            <div class="field-group flex-1">
-              <label class="field-label">Folder Path <span class="req">*</span></label>
-              <input v-model="saveModal.form.path" type="text" class="field" placeholder="relative to media source root" />
-            </div>
-            <div class="field-group flex-1">
-              <label class="field-label">Cover Image</label>
-              <input v-model="saveModal.form.cover" type="text" class="field" placeholder="filename, abs path, or URL" />
-            </div>
-          </div>
-
-          <div class="modal-section-label" style="margin-top:1rem">Identity</div>
-          <div class="modal-row">
-            <div class="field-group flex-1">
-              <label class="field-label">Title <span class="req">*</span></label>
-              <input v-model="saveModal.form.title" type="text" class="field" />
-            </div>
-            <div class="field-group flex-1">
-              <label class="field-label">Original Title</label>
-              <input v-model="saveModal.form.original_title" type="text" class="field" />
-            </div>
-          </div>
-          <div class="modal-row" style="margin-top:.5rem">
-            <div class="field-group flex-1">
-              <label class="field-label">
-                Artist / Author
-                <span v-if="selectedSourceType === 1" class="req">*</span>
-              </label>
-              <input v-model="saveModal.form.artist" type="text" class="field" />
-            </div>
-            <div class="field-group flex-1">
-              <label class="field-label">
-                Series / Circle
-                <span v-if="selectedSourceType === 1" class="req">*</span>
-              </label>
-              <input v-model="saveModal.form.series" type="text" class="field" />
-            </div>
-          </div>
-          <p v-if="selectedSourceType === 1" style="font-size:.72rem;color:#555570;margin:.35rem 0 0">
-            At least one of Artist or Circle is required — used to build the folder path.
-          </p>
-
-          <div class="modal-section-label" style="margin-top:1rem">Classification</div>
-          <div class="modal-row" style="gap:1.5rem">
-            <div class="field-group">
-              <label class="field-label">Content Rating</label>
-              <select v-model="saveModal.form.content_rating" class="field">
-                <option value="general">General</option>
-                <option value="sensitive">Sensitive</option>
-                <option value="questionable">Questionable</option>
-                <option value="explicit">Explicit</option>
-              </select>
-            </div>
-            <div class="field-group">
-              <label class="field-label">Score</label>
-              <div class="stars-row">
-                <button v-for="n in 5" :key="n" class="star-btn"
-                  :class="{ active: n <= saveModal.form.rating }"
-                  @click="saveModal.form.rating = saveModal.form.rating === n ? null : n">
-                  &#9733;
-                </button>
-                <span class="star-label">{{ saveModal.form.rating ? saveModal.form.rating + ' / 5' : 'none' }}</span>
-              </div>
-            </div>
-            <div class="field-group">
-              <label class="field-label">Language</label>
-              <input v-model="saveModal.form.language" type="text" class="field" style="width:120px" placeholder="e.g. Japanese" />
-            </div>
-          </div>
-
-          <!-- Image Collection section -->
-          <template v-if="selectedSourceType === 1">
-            <div class="modal-section-label" style="margin-top:1rem">Image Collection</div>
-            <div class="modal-row">
-              <div class="field-group">
-                <label class="field-label">Page Count</label>
-                <input v-model.number="saveModal.form.page_count" type="number" min="1" class="field" style="width:100px" />
-              </div>
-              <div class="field-group flex-1">
-                <label class="field-label">Source URL</label>
-                <input v-model="saveModal.form.source_url" type="text" class="field" placeholder="https://..." />
-              </div>
-            </div>
-          </template>
-
-          <!-- Game section -->
-          <template v-if="selectedSourceType === 2">
-            <div class="modal-section-label" style="margin-top:1rem">Game</div>
-            <div class="modal-row">
-              <div class="field-group flex-1">
-                <label class="field-label">Developer</label>
-                <input v-model="saveModal.form.developer" type="text" class="field" />
-              </div>
-              <div class="field-group flex-1">
-                <label class="field-label">Publisher</label>
-                <input v-model="saveModal.form.publisher" type="text" class="field" />
-              </div>
-              <div class="field-group">
-                <label class="field-label">Release Date</label>
-                <input v-model="saveModal.form.release_date" type="text" class="field" style="width:130px" placeholder="YYYY-MM-DD" />
-              </div>
-              <div class="field-group">
-                <label class="field-label">Platform</label>
-                <input v-model="saveModal.form.platform" type="text" class="field" style="width:110px" />
-              </div>
-            </div>
-          </template>
-
-          <!-- Video / Music section -->
-          <template v-if="selectedSourceType === 3">
-            <div class="modal-section-label" style="margin-top:1rem">Video / Music</div>
-            <div class="modal-row">
-              <div class="field-group">
-                <label class="field-label">Duration (sec)</label>
-                <input v-model.number="saveModal.form.duration" type="number" min="0" class="field" style="width:120px" />
-              </div>
-              <div class="field-group">
-                <label class="field-label">Track Count</label>
-                <input v-model.number="saveModal.form.track_count" type="number" min="1" class="field" style="width:100px" />
-              </div>
-            </div>
-          </template>
-
-          <div class="modal-section-label" style="margin-top:1rem">Summary</div>
-          <textarea v-model="saveModal.form.summary" class="field" rows="3" style="width:100%;resize:vertical" placeholder="Short description…"></textarea>
-
-          <div class="modal-section-label" style="margin-top:1rem">Notes</div>
-          <textarea v-model="saveModal.form.notes" class="field" rows="2" style="width:100%;resize:vertical" placeholder="Internal notes…"></textarea>
-
-          <div class="modal-section-label" style="margin-top:1rem">
-            Tags
-            <span class="section-sub">click to remove</span>
-          </div>
-          <div class="tags-wrap" style="margin-bottom:.5rem">
-            <button v-for="t in saveModal.form.tags" :key="t.tag" class="tag-chip tag-rm" @click="removeTag(t.tag)">
-              {{ t.tag }}<em v-if="t.score">{{ (t.score * 100).toFixed(0) }}%</em>
-            </button>
-          </div>
-          <div class="tag-add-row">
-            <input
-              v-model="saveModal.newTag"
-              type="text"
-              class="field tag-add-input"
-              placeholder="Add custom tag…"
-              @keydown.enter.prevent="addTag"
-            />
-            <button class="btn-secondary tag-add-btn" @click="addTag">Add</button>
-          </div>
-
+          <MediaEntryForm :form="saveModal.form" :mediatypeType="selectedSourceType" :show-path="true" />
           <div v-if="saveModal.error" class="error-msg" style="margin-top:.75rem">{{ saveModal.error }}</div>
         </div>
 
@@ -288,6 +138,7 @@ import { ref, computed, onMounted, reactive } from 'vue'
 import { ChevronLeft, ChevronDown, FolderOpen, Search, RotateCw, Save } from 'lucide-vue-next'
 import { API_BASE } from '../api.js'
 import { MEDIA_TYPE_IMAGE_COLLECTION } from '../mediatypeEnum.js'
+import MediaEntryForm from '../components/MediaEntryForm.vue'
 
 const sources           = ref([])
 const selectedSourceUid = ref('')
@@ -308,7 +159,7 @@ const saveEnabled = computed(() =>
 )
 
 const saveModal = reactive({
-  open: false, saving: false, error: '', newTag: '', moveContent: true,
+  open: false, saving: false, error: '', moveContent: true,
   form: defaultForm(),
 })
 
@@ -465,19 +316,6 @@ function openSave() {
   saveModal.error   = ''
   saveModal.saving  = false
   saveModal.open    = true
-}
-
-function removeTag(tagName) {
-  saveModal.form.tags = saveModal.form.tags.filter(t => t.tag !== tagName)
-}
-
-function addTag() {
-  const name = saveModal.newTag.trim().replace(/\s+/g, '_')
-  if (!name) return
-  const exists = saveModal.form.tags.some(t => t.tag.toLowerCase() === name.toLowerCase())
-  if (exists) { saveModal.newTag = ''; return }
-  saveModal.form.tags.push({ tag: name, score: 0 })
-  saveModal.newTag = ''
 }
 
 async function doSave() {

@@ -70,10 +70,15 @@
     <!-- Toolbar -->
     <div class="flex justify-between items-center mb-4" style="font-size:.78rem;color:#555570">
       <span>{{ resultsLabel }}</span>
-      <div v-if="totalPages > 1" class="flex items-center gap-2">
-        <button class="page-btn" :disabled="page <= 1" @click="goPage(page - 1)">&lsaquo;</button>
-        <span style="color:#777790">{{ page }} / {{ totalPages }}</span>
-        <button class="page-btn" :disabled="page >= totalPages" @click="goPage(page + 1)">&rsaquo;</button>
+      <div v-if="totalPages > 1" class="pagination">
+        <button class="page-btn" title="First" :disabled="page <= 1" @click="goPage(1)">&laquo;</button>
+        <button class="page-btn" title="Previous" :disabled="page <= 1" @click="goPage(page - 1)">&lsaquo;</button>
+        <template v-for="(item, i) in pageNumbers" :key="i">
+          <span v-if="item === '...'" class="page-ellipsis">&hellip;</span>
+          <button v-else class="page-btn page-num" :class="{ active: item === page }" @click="goPage(item)">{{ item }}</button>
+        </template>
+        <button class="page-btn" title="Next" :disabled="page >= totalPages" @click="goPage(page + 1)">&rsaquo;</button>
+        <button class="page-btn" title="Last" :disabled="page >= totalPages" @click="goPage(totalPages)">&raquo;</button>
       </div>
     </div>
 
@@ -117,10 +122,15 @@
     </div>
 
     <!-- Bottom pagination -->
-    <div v-if="totalPages > 1" class="flex justify-center items-center gap-2 mt-6" style="font-size:.78rem;color:#555570">
-      <button class="page-btn" :disabled="page <= 1" @click="goPage(page - 1)">&lsaquo;</button>
-      <span style="color:#777790">{{ page }} / {{ totalPages }}</span>
-      <button class="page-btn" :disabled="page >= totalPages" @click="goPage(page + 1)">&rsaquo;</button>
+    <div v-if="totalPages > 1" class="pagination" style="margin-top:1.5rem;justify-content:center">
+      <button class="page-btn" title="First" :disabled="page <= 1" @click="goPage(1)">&laquo;</button>
+      <button class="page-btn" title="Previous" :disabled="page <= 1" @click="goPage(page - 1)">&lsaquo;</button>
+      <template v-for="(item, i) in pageNumbers" :key="i">
+        <span v-if="item === '...'" class="page-ellipsis">&hellip;</span>
+        <button v-else class="page-btn page-num" :class="{ active: item === page }" @click="goPage(item)">{{ item }}</button>
+      </template>
+      <button class="page-btn" title="Next" :disabled="page >= totalPages" @click="goPage(page + 1)">&rsaquo;</button>
+      <button class="page-btn" title="Last" :disabled="page >= totalPages" @click="goPage(totalPages)">&raquo;</button>
     </div>
 
     <!-- Empty state -->
@@ -180,6 +190,26 @@ function toggleMediatype(uid) {
 const activeQuery = ref({ q: '', mediatypeUids: [], maxRating: 'explicit' })
 
 const totalPages   = computed(() => Math.ceil(total.value / pageSize.value) || 1)
+
+const pageNumbers = computed(() => {
+  const tot = totalPages.value
+  const cur = page.value
+  if (tot <= 7) return Array.from({ length: tot }, (_, i) => i + 1)
+  const pages = new Set([1, 2, tot - 1, tot])
+  for (let d = -2; d <= 2; d++) {
+    const p = cur + d
+    if (p > 0 && p <= tot) pages.add(p)
+  }
+  const sorted = [...pages].sort((a, b) => a - b)
+  const result = []
+  let prev = 0
+  for (const p of sorted) {
+    if (p - prev > 1) result.push('...')
+    result.push(p)
+    prev = p
+  }
+  return result
+})
 const resultsLabel = computed(() => {
   if (!total.value) return ''
   const start = (page.value - 1) * pageSize.value + 1
@@ -376,15 +406,18 @@ code { background: #1e1e30; border-radius: 3px; padding: 0 .35em; font-size: .88
 }
 .per-page-select:focus { border-color: #7c5cbf; }
 
-/* Pagination buttons */
+/* Pagination */
+.pagination { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
 .page-btn {
   background: #181820; border: 1px solid #252535; border-radius: 6px;
-  color: #a0a0c0; font-size: 1rem; width: 1.8rem; height: 1.8rem;
+  color: #a0a0c0; font-size: .85rem; width: 1.9rem; height: 1.9rem;
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background .12s, border-color .12s;
 }
 .page-btn:hover:not(:disabled) { background: #222232; border-color: #7c5cbf; color: #e0e0ee; }
 .page-btn:disabled { opacity: .35; cursor: default; }
+.page-num.active { background: #2a1e4a; border-color: #7c5cbf; color: #c0a0ff; font-weight: 600; }
+.page-ellipsis { color: #444460; font-size: .82rem; padding: 0 .1rem; line-height: 1.9rem; }
 
 /* Advanced filters toggle */
 .adv-toggle {

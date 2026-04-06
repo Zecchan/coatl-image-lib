@@ -13,46 +13,85 @@
 
       <!-- Text meta -->
       <div class="meta-col">
-        <div class="type-badge" :style="media.mediatypeColor ? `border-color:${media.mediatypeColor};color:${media.mediatypeColor}` : ''">
-          {{ media.mediatypeName }}
+        <div class="type-row">
+          <div class="type-badge" :style="media.mediatypeColor ? `border-color:${media.mediatypeColor};color:${media.mediatypeColor}` : ''">
+            {{ media.mediatypeName }}
+          </div>
+          <button class="edit-btn" title="Edit" @click="openEdit">
+            <Pencil :size="13" />
+            Edit
+          </button>
         </div>
+
         <h1 class="title">{{ media.title }}</h1>
         <p v-if="media.original_title" class="original-title">{{ media.original_title }}</p>
 
         <div class="meta-grid">
-          <template v-if="media.artist">
+          <!-- Type 1: Image Collection -->
+          <template v-if="media.mediatypeType === 1">
             <span class="meta-key">Artist</span>
-            <span class="meta-val">{{ media.artist }}</span>
-          </template>
-          <template v-if="media.series">
-            <span class="meta-key">Series</span>
-            <span class="meta-val">{{ media.series }}</span>
-          </template>
-          <template v-if="media.language">
-            <span class="meta-key">Language</span>
-            <span class="meta-val">{{ media.language }}</span>
-          </template>
-          <template v-if="media.page_count">
+            <span class="meta-val">{{ media.artist || '—' }}</span>
+            <span class="meta-key">Circle / Series</span>
+            <span class="meta-val">{{ media.series || '—' }}</span>
             <span class="meta-key">Pages</span>
-            <span class="meta-val">{{ media.page_count }}</span>
-          </template>
-          <template v-if="media.source_url">
+            <span class="meta-val">{{ media.page_count || '—' }}</span>
+            <span class="meta-key">Language</span>
+            <span class="meta-val">{{ media.language || '—' }}</span>
             <span class="meta-key">Source</span>
-            <span class="meta-val"><a :href="media.source_url" target="_blank" rel="noopener" class="link">{{ media.source_url }}</a></span>
+            <span class="meta-val">
+              <a v-if="media.source_url" :href="media.source_url" target="_blank" rel="noopener" class="link">{{ media.source_url }}</a>
+              <span v-else>—</span>
+            </span>
           </template>
-          <template v-if="media.mediasourceName">
-            <span class="meta-key">Library</span>
-            <span class="meta-val">{{ media.mediasourceName }}</span>
+
+          <!-- Type 2: Game -->
+          <template v-else-if="media.mediatypeType === 2">
+            <span class="meta-key">Developer</span>
+            <span class="meta-val">{{ media.developer || '—' }}</span>
+            <span class="meta-key">Publisher</span>
+            <span class="meta-val">{{ media.publisher || '—' }}</span>
+            <span class="meta-key">Platform</span>
+            <span class="meta-val">{{ media.platform || '—' }}</span>
+            <span class="meta-key">Released</span>
+            <span class="meta-val">{{ media.release_date || '—' }}</span>
+            <span class="meta-key">Language</span>
+            <span class="meta-val">{{ media.language || '—' }}</span>
           </template>
+
+          <!-- Type 3: Video / Music -->
+          <template v-else-if="media.mediatypeType === 3">
+            <span class="meta-key">Duration</span>
+            <span class="meta-val">{{ media.duration || '—' }}</span>
+            <span class="meta-key">Tracks</span>
+            <span class="meta-val">{{ media.track_count || '—' }}</span>
+            <span class="meta-key">Language</span>
+            <span class="meta-val">{{ media.language || '—' }}</span>
+          </template>
+
+          <!-- Fallback: show any non-empty field -->
+          <template v-else>
+            <template v-if="media.artist">
+              <span class="meta-key">Artist</span><span class="meta-val">{{ media.artist }}</span>
+            </template>
+            <template v-if="media.series">
+              <span class="meta-key">Series</span><span class="meta-val">{{ media.series }}</span>
+            </template>
+            <template v-if="media.language">
+              <span class="meta-key">Language</span><span class="meta-val">{{ media.language }}</span>
+            </template>
+          </template>
+
+          <!-- Always shown -->
+          <span class="meta-key">Library</span>
+          <span class="meta-val">{{ media.mediasourceName }}</span>
+          <span class="meta-key">Added</span>
+          <span class="meta-val">{{ formatDate(media.created_at) }}</span>
         </div>
 
         <!-- Stars -->
         <div v-if="media.rating" class="stars">
           <span v-for="s in 5" :key="s" :style="s <= media.rating ? 'color:#f0c040' : 'color:#2a2a3a'">★</span>
         </div>
-
-        <!-- Summary -->
-        <p v-if="media.summary" class="summary">{{ media.summary }}</p>
 
         <!-- Tags -->
         <div v-if="media.tags?.length" class="tags-row">
@@ -65,19 +104,54 @@
             <em v-if="t.score" class="tag-score">{{ Math.round(t.score * 100) }}%</em>
           </span>
         </div>
+
+        <!-- Collapsible: Summary -->
+        <details v-if="media.summary" class="collapsible">
+          <summary class="collapsible-toggle">Summary</summary>
+          <p class="collapsible-body">{{ media.summary }}</p>
+        </details>
+
+        <!-- Collapsible: Notes -->
+        <details v-if="media.notes" class="collapsible">
+          <summary class="collapsible-toggle">Notes</summary>
+          <p class="collapsible-body">{{ media.notes }}</p>
+        </details>
       </div>
     </div>
   </div>
+
+  <!-- Edit modal -->
+  <Teleport to="body">
+    <div v-if="editModal.open" class="modal-backdrop">
+      <div class="edit-modal">
+        <div class="modal-header">
+          <span style="font-size:.9rem;font-weight:600;color:#d0d0e0">Edit Media Entry</span>
+          <button class="icon-close" :disabled="editModal.saving" @click="editModal.saving || (editModal.open = false)">✕</button>
+        </div>
+        <div class="modal-body">
+          <MediaEntryForm :form="editModal.form" :mediatypeType="media.mediatypeType" :show-path="false" />
+          <div v-if="editModal.error" class="error-msg" style="margin-top:.75rem">{{ editModal.error }}</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" :disabled="editModal.saving" @click="editModal.saving || (editModal.open = false)">Cancel</button>
+          <button class="btn-primary" :disabled="editModal.saving" @click="doEdit">
+            {{ editModal.saving ? 'Saving…' : 'Save Changes' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { ImageOff } from 'lucide-vue-next'
+import { computed, reactive } from 'vue'
+import { ImageOff, Pencil } from 'lucide-vue-next'
+import MediaEntryForm from './MediaEntryForm.vue'
 
 const props = defineProps({
   media: { type: Object, required: true },
 })
-defineEmits(['tag-click'])
+const emit = defineEmits(['tag-click', 'updated'])
 
 const coverUrl = computed(() => {
   const m = props.media
@@ -86,6 +160,72 @@ const coverUrl = computed(() => {
   if (/^([a-zA-Z]:[/\\]|[/\\])/.test(m.cover)) return `/scan/image?f=${encodeURIComponent(m.cover)}`
   return `/scan/cover/${m.uid}`
 })
+
+function formatDate(str) {
+  if (!str) return ''
+  return new Date(str).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+// ─── Edit modal ──────────────────────────────────────────────────────────────
+const editModal = reactive({
+  open: false, saving: false, error: '',
+  form: {
+    cover: '', title: '', original_title: '', artist: '', series: '',
+    content_rating: 'general', rating: null, language: '',
+    page_count: null, source_url: '',
+    developer: '', publisher: '', release_date: '', platform: '',
+    duration: null, track_count: null,
+    summary: '', notes: '', tags: [],
+  },
+})
+
+function openEdit() {
+  const m = props.media
+  Object.assign(editModal.form, {
+    cover: m.cover || '',
+    title: m.title || '',
+    original_title: m.original_title || '',
+    artist: m.artist || '',
+    series: m.series || '',
+    content_rating: m.content_rating || 'general',
+    rating: m.rating || null,
+    language: m.language || '',
+    page_count: m.page_count || null,
+    source_url: m.source_url || '',
+    developer: m.developer || '',
+    publisher: m.publisher || '',
+    release_date: m.release_date || '',
+    platform: m.platform || '',
+    duration: m.duration || null,
+    track_count: m.track_count || null,
+    summary: m.summary || '',
+    notes: m.notes || '',
+    tags: (m.tags || []).map(t => ({ tag: t.name, score: t.score ?? 0 })),
+  })
+  editModal.error = ''
+  editModal.open = true
+}
+
+async function doEdit() {
+  if (!editModal.form.title.trim()) { editModal.error = 'Title is required.'; return }
+  editModal.saving = true
+  editModal.error = ''
+  try {
+    const res = await fetch(`/db/medias/${props.media.uid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(editModal.form),
+    })
+    const data = await res.json()
+    if (!res.ok) { editModal.error = data.error || 'Save failed.'; return }
+    editModal.open = false
+    emit('updated', data)
+  } catch (e) {
+    editModal.error = e.message
+  } finally {
+    editModal.saving = false
+  }
+}
 </script>
 
 <style scoped>
@@ -127,11 +267,19 @@ const coverUrl = computed(() => {
 
 /* Meta */
 .meta-col    { flex: 1; min-width: 0; }
+.type-row    { display: flex; align-items: center; justify-content: space-between; margin-bottom: .6rem; }
 .type-badge  {
   display: inline-block; font-size: .65rem; font-weight: 700; letter-spacing: .08em;
   text-transform: uppercase; border: 1px solid #333; color: #666;
-  border-radius: 4px; padding: .15em .6em; margin-bottom: .6rem;
+  border-radius: 4px; padding: .15em .6em;
 }
+.edit-btn {
+  display: inline-flex; align-items: center; gap: .3rem;
+  background: none; border: 1px solid #252535; color: #555570;
+  border-radius: 6px; padding: .25rem .6rem;
+  font-size: .72rem; cursor: pointer; transition: border-color .12s, color .12s;
+}
+.edit-btn:hover { border-color: #7c5cbf; color: #a080d8; }
 .title          { font-size: 1.4rem; font-weight: 700; color: #e8e8f8; margin: 0 0 .2rem; line-height: 1.25; }
 .original-title { font-size: .82rem; color: #555570; margin: 0 0 .75rem; }
 
@@ -148,9 +296,8 @@ const coverUrl = computed(() => {
 .link:hover { text-decoration: underline; }
 
 .stars       { font-size: 1.1rem; margin-bottom: .6rem; line-height: 1; }
-.summary     { font-size: .82rem; color: #7070a0; line-height: 1.5; margin: 0 0 .75rem; }
 
-.tags-row    { display: flex; flex-wrap: wrap; gap: .3rem; }
+.tags-row    { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .6rem; }
 .tag-chip    {
   display: inline-flex; align-items: center; gap: .3em;
   font-size: .67rem; background: #1a1a2a; border: 1px solid #252540;
@@ -160,8 +307,53 @@ const coverUrl = computed(() => {
 .tag-chip:hover { background: #222235; color: #a0a0c0; }
 .tag-score  { font-style: normal; color: #404058; font-size: .6rem; }
 
+.collapsible { margin-top: .5rem; border: 1px solid #1e1e30; border-radius: 6px; overflow: hidden; }
+.collapsible-toggle {
+  list-style: none;
+  display: flex; align-items: center; gap: .4rem;
+  font-size: .75rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  color: #484860; padding: .45rem .75rem;
+  cursor: pointer; user-select: none;
+  background: #0f0f1a;
+}
+.collapsible-toggle::before { content: '▶'; font-size: .55rem; transition: transform .15s; }
+details[open] > .collapsible-toggle::before { transform: rotate(90deg); }
+.collapsible-toggle::-webkit-details-marker { display: none; }
+.collapsible-body {
+  font-size: .82rem; color: #7070a0; line-height: 1.6;
+  margin: 0; padding: .6rem .75rem;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 600px) {
   .header-layout { flex-direction: column; }
   .cover-wrap    { width: 100%; aspect-ratio: 16 / 9; }
 }
+
+/* Edit modal */
+.modal-backdrop {
+  position: fixed; inset: 0; background: #00000099;
+  display: flex; align-items: center; justify-content: center; z-index: 400;
+}
+.edit-modal {
+  background: #131318; border: 1px solid #252535; border-radius: 14px;
+  width: min(860px, 96vw); max-height: 90vh;
+  display: flex; flex-direction: column;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 1.5rem; border-bottom: 1px solid #1e1e2a;
+}
+.modal-body {
+  flex: 1; overflow-y: auto; padding: 1.25rem 1.5rem;
+}
+.modal-footer {
+  display: flex; justify-content: flex-end; gap: .6rem;
+  padding: 1rem 1.5rem; border-top: 1px solid #1e1e2a;
+}
+.icon-close {
+  background: none; border: none; color: #444458; font-size: 1rem; cursor: pointer; line-height: 1;
+}
+.icon-close:hover { color: #d0d0e0; }
+.error-msg { color: #f87171; font-size: .8rem; }
 </style>

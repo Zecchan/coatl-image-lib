@@ -11,10 +11,15 @@
           <option :value="48">48 / page</option>
           <option :value="96">96 / page</option>
         </select>
-        <div v-if="totalPages > 1" class="flex items-center gap-2">
-          <button class="page-btn" :disabled="page <= 1" @click="goPage(page - 1)">&lsaquo;</button>
-          <span class="page-label">{{ page }} / {{ totalPages }}</span>
-          <button class="page-btn" :disabled="page >= totalPages" @click="goPage(page + 1)">&rsaquo;</button>
+        <div v-if="totalPages > 1" class="pagination">
+          <button class="page-btn" title="First" :disabled="page <= 1" @click="goPage(1)">&laquo;</button>
+          <button class="page-btn" title="Previous" :disabled="page <= 1" @click="goPage(page - 1)">&lsaquo;</button>
+          <template v-for="(item, i) in pageNumbers" :key="i">
+            <span v-if="item === '...'" class="page-ellipsis">&hellip;</span>
+            <button v-else class="page-btn page-num" :class="{ active: item === page }" @click="goPage(item)">{{ item }}</button>
+          </template>
+          <button class="page-btn" title="Next" :disabled="page >= totalPages" @click="goPage(page + 1)">&rsaquo;</button>
+          <button class="page-btn" title="Last" :disabled="page >= totalPages" @click="goPage(totalPages)">&raquo;</button>
         </div>
       </div>
     </div>
@@ -47,10 +52,15 @@
     </div>
 
     <!-- Bottom pagination -->
-    <div v-if="totalPages > 1" class="flex justify-center items-center gap-2 mt-6" style="font-size:.78rem;color:#555570">
-      <button class="page-btn" :disabled="page <= 1" @click="goPage(page - 1)">&lsaquo;</button>
-      <span class="page-label">{{ page }} / {{ totalPages }}</span>
-      <button class="page-btn" :disabled="page >= totalPages" @click="goPage(page + 1)">&rsaquo;</button>
+    <div v-if="totalPages > 1" class="pagination" style="margin-top:1.5rem;justify-content:center">
+      <button class="page-btn" title="First" :disabled="page <= 1" @click="goPage(1)">&laquo;</button>
+      <button class="page-btn" title="Previous" :disabled="page <= 1" @click="goPage(page - 1)">&lsaquo;</button>
+      <template v-for="(item, i) in pageNumbers" :key="i">
+        <span v-if="item === '...'" class="page-ellipsis">&hellip;</span>
+        <button v-else class="page-btn page-num" :class="{ active: item === page }" @click="goPage(item)">{{ item }}</button>
+      </template>
+      <button class="page-btn" title="Next" :disabled="page >= totalPages" @click="goPage(page + 1)">&rsaquo;</button>
+      <button class="page-btn" title="Last" :disabled="page >= totalPages" @click="goPage(totalPages)">&raquo;</button>
     </div>
 
     <!-- Fullscreen viewer -->
@@ -73,6 +83,28 @@ const pageSize = ref(48)
 const loading  = ref(false)
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize.value) || 1)
+
+// Builds the page-number list with ellipsis gaps.
+// Returns an array of numbers or the string '...' (ellipsis sentinel).
+const pageNumbers = computed(() => {
+  const total = totalPages.value
+  const cur   = page.value
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const pages = new Set([1, 2, total - 1, total])
+  for (let d = -2; d <= 2; d++) {
+    const p = cur + d
+    if (p > 0 && p <= total) pages.add(p)
+  }
+  const sorted = [...pages].sort((a, b) => a - b)
+  const result = []
+  let prev = 0
+  for (const p of sorted) {
+    if (p - prev > 1) result.push('...')
+    result.push(p)
+    prev = p
+  }
+  return result
+})
 
 // Viewer
 const viewerOpen = ref(false)
@@ -160,12 +192,15 @@ onMounted(fetchImages)
 .per-page-select:focus { border-color: #7c5cbf; }
 .page-btn {
   background: #181820; border: 1px solid #252535; border-radius: 6px;
-  color: #a0a0c0; font-size: 1rem; width: 1.8rem; height: 1.8rem;
+  color: #a0a0c0; font-size: .85rem; width: 1.9rem; height: 1.9rem;
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background .12s, border-color .12s;
 }
 .page-btn:hover:not(:disabled) { background: #222232; border-color: #7c5cbf; color: #e0e0ee; }
 .page-btn:disabled { opacity: .35; cursor: default; }
+.page-num.active { background: #2a1e4a; border-color: #7c5cbf; color: #c0a0ff; font-weight: 600; }
+.page-ellipsis { color: #444460; font-size: .82rem; padding: 0 .1rem; line-height: 1.9rem; }
+.pagination { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
 .page-label { font-size: .78rem; color: #777790; }
 
 .state-center { display: flex; justify-content: center; }

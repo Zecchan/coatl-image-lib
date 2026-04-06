@@ -16,7 +16,7 @@
 
     <template v-else-if="media">
       <!-- Common header -->
-      <MediaHeader :media="media" @tag-click="onTagClick" />
+      <MediaHeader :media="media" @tag-click="onTagClick" @updated="onMediaUpdated" />
 
       <!-- Type-specific content -->
 
@@ -63,6 +63,13 @@ onMounted(async () => {
 function onTagClick(name, e) {
   // Navigate home with the tag pre-filled in search
   router.push({ path: '/', query: { q: `$${name}` } })
+}
+
+function onMediaUpdated(updated) {
+  media.value = updated
+  const sep = document.title.indexOf(' — ')
+  if (sep !== -1) document.title = updated.title + document.title.slice(sep)
+  else document.title = updated.title
 }
 </script>
 

@@ -13,18 +13,18 @@ import MediaView from './views/MediaView.vue'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/',            component: HomeView,          meta: { title: 'Library' } },
-    { path: '/admin',       component: AdminView,         meta: { title: 'Administration' } },
-    { path: '/serverconfig',component: ServerConfigView,  meta: { title: 'Server Config' } },
-    { path: '/mediatypes',  component: MediaTypesView,    meta: { title: 'Media Types' } },
-    { path: '/mediasources',component: MediaSourcesView,  meta: { title: 'Media Sources' } },
-    { path: '/indexfolder', component: IndexFolderView,   meta: { title: 'Add Media' } },
-    { path: '/media/:uid',  component: MediaView },
+    { path: '/', component: HomeView, meta: { title: 'Library' } },
+    { path: '/admin', component: AdminView, meta: { title: 'Administration' } },
+    { path: '/serverconfig', component: ServerConfigView, meta: { title: 'Server Config' } },
+    { path: '/mediatypes', component: MediaTypesView, meta: { title: 'Media Types' } },
+    { path: '/mediasources', component: MediaSourcesView, meta: { title: 'Media Sources' } },
+    { path: '/indexfolder', component: IndexFolderView, meta: { title: 'Add Media' } },
+    { path: '/media/:uid', component: MediaView },
   ],
 })
 
 let _siteName = 'Coatl'
-fetch('/config').then(r => r.json()).then(cfg => { _siteName = cfg.site?.title || 'Coatl' }).catch(() => {})
+fetch('/config').then(r => r.json()).then(cfg => { _siteName = cfg.site?.title || 'Coatl' }).catch(() => { })
 export function getSiteName() { return _siteName }
 
 router.afterEach((to) => {

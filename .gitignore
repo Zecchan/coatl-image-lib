@@ -9,6 +9,12 @@ npm-debug.log*
 ui/serverconfig.json
 ui/dist/
 
+# SQLite database
+*.db
+*.db-wal
+*.db-shm
+data/
+
 # C extensions
 *.so
 

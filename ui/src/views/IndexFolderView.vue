@@ -215,7 +215,8 @@ function imgUrl(absPath) {
 }
 
 async function load() {
-  const dir = scanPath.value.trim()
+  scanPath.value = scanPath.value.trim().replace(/^"(.*)"$/, '$1')
+  const dir = scanPath.value
   if (!dir) return
   loading.value  = true
   error.value    = ''

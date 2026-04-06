@@ -33,17 +33,26 @@ function walkImages(dir) { return walkFiles(dir, IMAGE_EXTS); }
 function walkVideos(dir) { return walkFiles(dir, VIDEO_EXTS); }
 function walkAudios(dir) { return walkFiles(dir, AUDIO_EXTS); }
 
-// Returns first image + up to (n-1) random samples from the rest, total <= n.
+// Returns first image (by filename sort) + one representative from each of (n-1) filesize groups.
 function sampleImages(files, n) {
   if (files.length === 0) return [];
-  const first = files[0];
-  const rest = files.slice(1);
-  // Fisher-Yates shuffle on the rest
-  for (let i = rest.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [rest[i], rest[j]] = [rest[j], rest[i]];
+  const byName = [...files].sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+  const first = byName[0];
+  const rest = files
+    .filter(f => f !== first)
+    .map(f => ({ f, size: (() => { try { return fs.statSync(f).size; } catch { return 0; } })() }))
+    .sort((a, b) => a.size - b.size);
+  if (rest.length === 0) return [first];
+  const groupCount = Math.min(n - 1, rest.length);
+  const picks = [];
+  for (let g = 0; g < groupCount; g++) {
+    const start = Math.floor((g * rest.length) / groupCount);
+    const end   = Math.floor(((g + 1) * rest.length) / groupCount);
+    const group = rest.slice(start, end);
+    const pick  = group[Math.floor(Math.random() * group.length)];
+    picks.push(pick.f);
   }
-  return [first, ...rest.slice(0, n - 1)];
+  return [first, ...picks];
 }
 
 // ── Video frame helpers ───────────────────────────────────────────────────────

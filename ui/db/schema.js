@@ -33,6 +33,7 @@ function openDb() {
 function applySchema(db) {
   db.exec(`
     -- ── mediatypes ──────────────────────────────────────────────────────────
+
     -- Defines categories of media collections.
     -- The 'type' column is an internal integer enum (see docs/MEDIATYPES_ENUM.md).
     CREATE TABLE IF NOT EXISTS mediatypes (
@@ -114,6 +115,10 @@ function applySchema(db) {
       UNIQUE(media_id, tag_id)
     );
   `);
+
+  // ── Migrations ──────────────────────────────────────────────────────────────
+  // ALTER TABLE does not support IF NOT EXISTS; ignore error if column exists.
+  try { db.exec('ALTER TABLE medias ADD COLUMN qdrant_indexed_at TEXT DEFAULT NULL'); } catch { }
 }
 
 // ── UID helper ───────────────────────────────────────────────────────────────

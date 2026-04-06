@@ -133,6 +133,10 @@
           <div v-if="editModal.error" class="error-msg" style="margin-top:.75rem">{{ editModal.error }}</div>
         </div>
         <div class="modal-footer">
+          <label v-if="media.mediatypeType === 1" class="reembed-check">
+            <input type="checkbox" v-model="editModal.reembed" :disabled="editModal.saving" />
+            Re-embed images
+          </label>
           <button class="btn-secondary" :disabled="editModal.saving" @click="editModal.saving || (editModal.open = false)">Cancel</button>
           <button class="btn-primary" :disabled="editModal.saving" @click="doEdit">
             {{ editModal.saving ? 'Saving…' : 'Save Changes' }}
@@ -168,7 +172,7 @@ function formatDate(str) {
 
 // ─── Edit modal ──────────────────────────────────────────────────────────────
 const editModal = reactive({
-  open: false, saving: false, error: '',
+  open: false, saving: false, error: '', reembed: false,
   form: {
     cover: '', title: '', original_title: '', artist: '', series: '',
     content_rating: 'general', rating: null, language: '',
@@ -203,6 +207,7 @@ function openEdit() {
     tags: (m.tags || []).map(t => ({ tag: t.name, score: t.score ?? 0 })),
   })
   editModal.error = ''
+  editModal.reembed = false
   editModal.open = true
 }
 
@@ -220,6 +225,10 @@ async function doEdit() {
     if (!res.ok) { editModal.error = data.error || 'Save failed.'; return }
     editModal.open = false
     emit('updated', data)
+    if (editModal.reembed) {
+      // Fire-and-forget re-embedding in the background
+      fetch(`/db/medias/${props.media.uid}/reindex`, { method: 'POST' }).catch(() => {})
+    }
   } catch (e) {
     editModal.error = e.message
   } finally {
@@ -348,9 +357,15 @@ details[open] > .collapsible-toggle::before { transform: rotate(90deg); }
   flex: 1; overflow-y: auto; padding: 1.25rem 1.5rem;
 }
 .modal-footer {
-  display: flex; justify-content: flex-end; gap: .6rem;
+  display: flex; justify-content: flex-end; align-items: center; gap: .6rem;
   padding: 1rem 1.5rem; border-top: 1px solid #1e1e2a;
 }
+.reembed-check {
+  display: flex; align-items: center; gap: .4rem;
+  font-size: .82rem; color: #a0a0b8; cursor: pointer;
+  margin-right: auto; user-select: none;
+}
+.reembed-check input[type=checkbox] { cursor: pointer; accent-color: #7c7cff; }
 .icon-close {
   background: none; border: none; color: #444458; font-size: 1rem; cursor: pointer; line-height: 1;
 }

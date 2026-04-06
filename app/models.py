@@ -18,3 +18,13 @@ class TagRequest(BaseModel):
 class AnalyzeRequest(BaseModel):
     folder_path: str
     images: List[str]
+
+
+class IndexRequest(BaseModel):
+    media_uid: str
+    image_paths: List[str]
+
+
+class SearchRequest(BaseModel):
+    text: str
+    limit: Optional[int] = 20

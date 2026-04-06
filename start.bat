@@ -13,8 +13,8 @@ for /f "usebackq eol=# tokens=1,2 delims==" %%a in (".env") do set "%%a=%%b"
 echo.
 echo  Coatl Image Lib
 echo  ---------------
-echo  API : http://127.0.0.1:!API_PORT!
-echo  UI  : http://127.0.0.1:!UI_PORT!
+echo  API : http://localhost:!API_PORT!
+echo  UI  : http://localhost:!UI_PORT!
 echo.
 
 REM Launch Python API in new window
@@ -28,4 +28,4 @@ start "Coatl UI" cmd /k "cd /d %~dp0\ui && npm run dev"
 
 REM Wait then open browser
 timeout /t 4 /nobreak >nul
-start "" http://127.0.0.1:!UI_PORT!
+start "" http://localhost:!UI_PORT!

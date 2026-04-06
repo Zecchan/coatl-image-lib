@@ -273,6 +273,25 @@ router.post('/save', (req, res) => {
   }
 
   res.status(201).json({ ok: true, uid: newUid, path: relPath, destDir });
+
+  // Fire-and-forget: index images into Qdrant after responding
+  const imagePaths = walkImages(destDir);
+  if (imagePaths.length) {
+    const apiPort = parseInt(process.env.API_PORT) || 8000;
+    fetch(`http://127.0.0.1:${apiPort}/index_media`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ media_uid: newUid, image_paths: imagePaths }),
+    }).then(r => {
+      if (r.ok) {
+        const db2 = getDb();
+        db2.prepare("UPDATE medias SET qdrant_indexed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE uid = ?")
+          .run(newUid);
+      }
+    }).catch(e => {
+      console.warn('[qdrant] index_media failed after save:', e.message);
+    });
+  }
 });
 
 module.exports = router;

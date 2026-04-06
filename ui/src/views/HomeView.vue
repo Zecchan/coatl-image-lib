@@ -14,6 +14,12 @@
         />
         <button class="btn-primary" @click="doSearch">Search</button>
         <button class="btn-secondary" @click="clearSearch">Clear</button>
+        <div class="mode-toggle">
+          <button class="mode-btn" :class="{ active: searchMode === 'keyword' }" @click="setMode('keyword')">Keyword</button>
+          <button class="mode-btn" :class="{ active: searchMode === 'semantic' }" @click="setMode('semantic')">
+            <Zap :size="11" />Semantic
+          </button>
+        </div>
         <select class="per-page-select" v-model="pageSize" @change="onPageSizeChange">
           <option :value="10">10 / page</option>
           <option :value="25">25 / page</option>
@@ -25,11 +31,14 @@
           <ChevronDown :size="12" :style="{ transform: advancedOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .2s' }" />
         </button>
       </div>
-      <p style="margin:.6rem 0 0 1.6rem;font-size:.72rem;color:#404055">
+      <p v-if="searchMode === 'keyword'" style="margin:.6rem 0 0 1.6rem;font-size:.72rem;color:#404055">
         Plain text searches title / artist / series &nbsp;·&nbsp;
         <code>field:value</code> matches a specific field &nbsp;·&nbsp;
         <code>$tag</code> requires a tag &nbsp;·&nbsp;
         <code>-$tag</code> excludes a tag
+      </p>
+      <p v-else style="margin:.6rem 0 0 1.6rem;font-size:.72rem;color:#404055">
+        Describe what you&rsquo;re looking for &mdash; e.g. <em style="color:#7c6090">two girls under cherry blossoms</em>
       </p>
 
       <!-- Advanced filters panel -->
@@ -70,7 +79,7 @@
     <!-- Toolbar -->
     <div class="flex justify-between items-center mb-4" style="font-size:.78rem;color:#555570">
       <span>{{ resultsLabel }}</span>
-      <div v-if="totalPages > 1" class="pagination">
+      <div v-if="!isSemantic && totalPages > 1" class="pagination">
         <button class="page-btn" title="First" :disabled="page <= 1" @click="goPage(1)">&laquo;</button>
         <button class="page-btn" title="Previous" :disabled="page <= 1" @click="goPage(page - 1)">&lsaquo;</button>
         <template v-for="(item, i) in pageNumbers" :key="i">
@@ -99,6 +108,8 @@
           </div>
           <!-- Content rating badge -->
           <span class="cr-badge" :class="`cr-${m.content_rating}`">{{ m.content_rating }}</span>
+          <!-- Semantic similarity score -->
+          <span v-if="m.semanticScore !== undefined" class="score-badge">{{ Math.round(m.semanticScore * 100) }}%</span>
         </div>
 
         <!-- Info -->
@@ -122,7 +133,7 @@
     </div>
 
     <!-- Bottom pagination -->
-    <div v-if="totalPages > 1" class="pagination" style="margin-top:1.5rem;justify-content:center">
+    <div v-if="!isSemantic && totalPages > 1" class="pagination" style="margin-top:1.5rem;justify-content:center">
       <button class="page-btn" title="First" :disabled="page <= 1" @click="goPage(1)">&laquo;</button>
       <button class="page-btn" title="Previous" :disabled="page <= 1" @click="goPage(page - 1)">&lsaquo;</button>
       <template v-for="(item, i) in pageNumbers" :key="i">
@@ -146,7 +157,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Search, Images, SlidersHorizontal, ChevronDown } from 'lucide-vue-next'
+import { Search, Images, SlidersHorizontal, ChevronDown, Zap } from 'lucide-vue-next'
 
 const route  = useRoute()
 const router = useRouter()
@@ -159,6 +170,10 @@ const page       = ref(1)
 const pageSize   = ref(25)
 const emptyTitle = ref('No media indexed yet')
 const emptyMsg   = ref('Go to <a href="/admin">Administration</a> to index your image folders.')
+
+// ── Search mode ───────────────────────────────────────────────────────────────
+const searchMode = ref('keyword') // 'keyword' | 'semantic'
+const isSemantic = computed(() => searchMode.value === 'semantic')
 
 // ── Advanced filter state (pending — only applied on Search) ──────────────────
 const advancedOpen          = ref(false)
@@ -189,7 +204,7 @@ function toggleMediatype(uid) {
 // Captured from the form on Search click; page navigation reuses it.
 const activeQuery = ref({ q: '', mediatypeUids: [], maxRating: 'explicit' })
 
-const totalPages   = computed(() => Math.ceil(total.value / pageSize.value) || 1)
+const totalPages   = computed(() => isSemantic.value ? 1 : Math.ceil(total.value / pageSize.value) || 1)
 
 const pageNumbers = computed(() => {
   const tot = totalPages.value
@@ -211,6 +226,9 @@ const pageNumbers = computed(() => {
   return result
 })
 const resultsLabel = computed(() => {
+  if (isSemantic.value) {
+    return medias.value.length ? `Top ${medias.value.length} semantic results for "${activeQuery.value.q}"` : ''
+  }
   if (!total.value) return ''
   const start = (page.value - 1) * pageSize.value + 1
   const end   = Math.min(page.value * pageSize.value, total.value)
@@ -247,6 +265,36 @@ async function runFetch() {
   }
 }
 
+async function runSemanticFetch() {
+  const text = activeQuery.value.q
+  if (!text) return
+  try {
+    const res = await fetch('/db/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        limit: 20,
+        mediatypeUids: activeQuery.value.mediatypeUids,
+        maxRating: activeQuery.value.maxRating,
+      }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const data = await res.json()
+    medias.value = data.results
+    total.value  = data.results.length
+    if (!data.results.length) {
+      emptyTitle.value = `No semantic matches for "${text}"`
+      emptyMsg.value   = 'Try different keywords or make sure images have been indexed.'
+    }
+  } catch {
+    medias.value = []
+    total.value  = 0
+    emptyTitle.value = 'Semantic search failed'
+    emptyMsg.value   = 'Could not reach the API. Make sure the Python server is running.'
+  }
+}
+
 // Capture current form state, reset to page 1, fetch.
 async function doSearch() {
   activeQuery.value = {
@@ -255,7 +303,18 @@ async function doSearch() {
     maxRating:     maxRating.value,
   }
   page.value = 1
-  await runFetch()
+  if (isSemantic.value) {
+    if (!activeQuery.value.q) {
+      medias.value = []
+      total.value  = 0
+      emptyTitle.value = 'Enter a search query'
+      emptyMsg.value   = 'Semantic search requires a text description.'
+      return
+    }
+    await runSemanticFetch()
+  } else {
+    await runFetch()
+  }
 }
 
 // Navigate to a specific page with the current active query.
@@ -276,7 +335,24 @@ function clearSearch() {
   maxRating.value             = 'explicit'
   activeQuery.value           = { q: '', mediatypeUids: [], maxRating: 'explicit' }
   page.value                  = 1
-  runFetch()
+  if (isSemantic.value) {
+    medias.value = []
+    total.value  = 0
+  } else {
+    runFetch()
+  }
+}
+
+function setMode(mode) {
+  if (searchMode.value === mode) return
+  searchMode.value = mode
+  page.value = 1
+  if (mode === 'semantic') {
+    if (activeQuery.value.q) runSemanticFetch()
+    else { medias.value = []; total.value = 0 }
+  } else {
+    runFetch()
+  }
 }
 
 onMounted(async () => {
@@ -460,4 +536,23 @@ code { background: #1e1e30; border-radius: 3px; padding: 0 .35em; font-size: .88
   transition: background .12s, border-color .12s, color .12s;
 }
 .rating-btn:hover { border-color: #444460; color: #9090b0; }
+
+/* Search mode toggle */
+.mode-toggle { display: flex; border: 1px solid #252535; border-radius: 6px; overflow: hidden; flex-shrink: 0; }
+.mode-btn {
+  background: #181820; border: none; color: #555570; font-size: .72rem;
+  padding: .28rem .65rem; cursor: pointer; display: inline-flex; align-items: center; gap: .3rem;
+  transition: background .12s, color .12s;
+}
+.mode-btn:hover { background: #222232; color: #9090b0; }
+.mode-btn.active { background: #1e1535; color: #b090f0; }
+.mode-btn + .mode-btn { border-left: 1px solid #252535; }
+
+/* Semantic score badge */
+.score-badge {
+  position: absolute; top: .4rem; right: .4rem;
+  font-size: .62rem; font-weight: 700; letter-spacing: .03em;
+  padding: .15em .55em; border-radius: 4px;
+  background: #1a1535cc; color: #b090f0; border: 1px solid #7c5cbf55;
+}
 </style>

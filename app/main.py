@@ -1,10 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.models import TextRequest, ImageRequest, TagRequest, AnalyzeRequest
+from app.models import TextRequest, ImageRequest, TagRequest, AnalyzeRequest, IndexRequest, SearchRequest
 from app.services.clip_service import clip_service
 from app.services.image_service import analyze_image
 from app.services.caption_service import caption_service
 from app.services.tag_service import tag_service
+from app.services.qdrant_service import qdrant_service
 import numpy as np
 
 app = FastAPI()
@@ -69,3 +70,30 @@ def analyze(req: AnalyzeRequest):
         "images": results,
         "embedding": folder_embedding,
     }
+
+
+# INDEX MEDIA IMAGES INTO QDRANT
+@app.post("/index_media")
+def index_media(req: IndexRequest):
+    count = qdrant_service.index_media(req.media_uid, req.image_paths)
+    return {"indexed": count, "media_uid": req.media_uid}
+
+
+# REMOVE MEDIA FROM QDRANT
+@app.delete("/index_media/{media_uid}")
+def delete_index(media_uid: str):
+    qdrant_service.delete_media(media_uid)
+    return {"deleted": True, "media_uid": media_uid}
+
+
+# SEMANTIC TEXT SEARCH
+@app.post("/search_images")
+def search_images(req: SearchRequest):
+    hits = qdrant_service.search_by_text(req.text, req.limit)
+    return {"results": hits}
+
+
+# QDRANT COLLECTION STATUS
+@app.get("/qdrant_status")
+def qdrant_status():
+    return qdrant_service.collection_info()

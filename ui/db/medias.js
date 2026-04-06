@@ -1,7 +1,27 @@
 'use strict';
 
+const path = require('path');
+const fs = require('fs');
 const Router = require('express').Router;
 const { getDb, uid } = require('./schema');
+
+const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif', '.avif']);
+
+function walkImages(dir) {
+  const results = [];
+  function walk(current) {
+    let entries;
+    try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return; }
+    entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    for (const e of entries) {
+      const full = path.join(current, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (e.isFile() && IMAGE_EXTS.has(path.extname(e.name).toLowerCase())) results.push(full);
+    }
+  }
+  walk(dir);
+  return results;
+}
 
 const router = Router();
 
@@ -28,7 +48,7 @@ const SELECT_MEDIA = `
     m.developer, m.publisher, m.release_date, m.platform,
     m.duration, m.track_count,
     m.language, m.notes,
-    m.created_at, m.updated_at,
+    m.created_at, m.updated_at, m.qdrant_indexed_at,
     ms.uid  AS mediasourceUid,  ms.name AS mediasourceName,
     mt.uid  AS mediatypeUid,    mt.name AS mediatypeName, mt.color AS mediatypeColor, mt.type AS mediatypeType
   FROM medias m
@@ -298,6 +318,39 @@ router.put('/:uid', (req, res) => {
 
   const updated = db.prepare(SELECT_MEDIA + ' WHERE m.uid = ?').get(req.params.uid);
   res.json(attachTags(db, [updated])[0]);
+});
+
+// ── POST /db/medias/:uid/reindex ────────────────────────────────────────────
+// Responds immediately (202), then indexes images into Qdrant in the background.
+router.post('/:uid/reindex', async (req, res) => {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT m.path AS mediaPath, ms.path AS sourcePath
+    FROM medias m
+    JOIN mediasources ms ON ms.id = m.mediasource_id
+    WHERE m.uid = ?
+  `).get(req.params.uid);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+
+  const absDir = path.resolve(path.join(row.sourcePath, row.mediaPath));
+  const imagePaths = walkImages(absDir);
+  res.status(202).json({ ok: true, queued: imagePaths.length });
+
+  if (!imagePaths.length) return;
+  const apiPort = parseInt(process.env.API_PORT) || 8000;
+  try {
+    const r = await fetch(`http://127.0.0.1:${apiPort}/index_media`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ media_uid: req.params.uid, image_paths: imagePaths }),
+    });
+    if (r.ok) {
+      db.prepare("UPDATE medias SET qdrant_indexed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE uid = ?")
+        .run(req.params.uid);
+    }
+  } catch (e) {
+    console.warn('[qdrant] reindex failed:', e.message);
+  }
 });
 
 // ── DELETE /db/medias/:uid ────────────────────────────────────────────────────

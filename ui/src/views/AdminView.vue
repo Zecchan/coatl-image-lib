@@ -58,22 +58,6 @@
         </span>
       </div>
 
-      <!-- Database -->
-      <div class="card">
-        <Database :size="26" style="color:#34d399;margin-bottom:.75rem" />
-        <h3 class="card-title">Database</h3>
-        <p class="card-desc">Browse and manage the index — SQLite metadata and Qdrant vector store.</p>
-        <span class="badge">Coming soon</span>
-      </div>
-
-      <!-- Remove Images -->
-      <div class="card">
-        <Trash2 :size="26" style="color:#f87171;margin-bottom:.75rem" />
-        <h3 class="card-title">Remove Images</h3>
-        <p class="card-desc">Remove images from the index without deleting original files.</p>
-        <span class="badge">Coming soon</span>
-      </div>
-
     </div>
   </div>
 </template>
@@ -81,7 +65,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import {
-  Settings, FolderPlus, Database, Trash2,
+  Settings, FolderPlus,
   Cpu, RotateCw, SlidersHorizontal, ArrowRight,
   Tag, HardDrive,
 } from 'lucide-vue-next'

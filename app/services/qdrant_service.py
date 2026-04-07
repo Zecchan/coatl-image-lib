@@ -14,6 +14,7 @@ from qdrant_client.models import (
     Filter,
     FieldCondition,
     MatchValue,
+    MatchAny,
     FilterSelector,
 )
 
@@ -104,21 +105,26 @@ class QdrantService:
             ),
         )
 
-    def search_by_text(self, text: str, limit: int = 20) -> List[dict]:
+    def search_by_text(self, text: str, limit: int = 20, allowed_uids=None) -> List[dict]:
         """Embed text query and search Qdrant."""
         self.ensure_collection()
         query_vector = clip_service.embed_text(text)
-        return self.search_by_vector(query_vector, limit)
+        return self.search_by_vector(query_vector, limit, allowed_uids)
 
-    def search_by_image(self, pil_image, limit: int = 20) -> List[dict]:
+    def search_by_image(self, pil_image, limit: int = 20, allowed_uids=None) -> List[dict]:
         """Embed a PIL image and search Qdrant."""
         self.ensure_collection()
         query_vector = clip_service.embed_image_pil(pil_image)
-        return self.search_by_vector(query_vector, limit)
+        return self.search_by_vector(query_vector, limit, allowed_uids)
 
-    def search_by_vector(self, query_vector: List[float], limit: int = 20) -> List[dict]:
+    def search_by_vector(self, query_vector: List[float], limit: int = 20, allowed_uids=None) -> List[dict]:
         """Run a Qdrant nearest-neighbour search and group results by media_uid."""
         client = self._get_client()
+
+        query_filter = (
+            Filter(must=[FieldCondition(key="media_uid", match=MatchAny(any=allowed_uids))])
+            if allowed_uids is not None else None
+        )
 
         # Fetch limit*10 candidates then group by media_uid in Python
         response = client.query_points(
@@ -126,6 +132,7 @@ class QdrantService:
             query=query_vector,
             limit=limit * 10,
             with_payload=True,
+            query_filter=query_filter,
         )
 
         # Keep best-scoring point per media_uid

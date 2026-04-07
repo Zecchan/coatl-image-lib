@@ -28,11 +28,13 @@ class IndexRequest(BaseModel):
 class SearchRequest(BaseModel):
     text: str
     limit: Optional[int] = 20
+    allowed_uids: Optional[List[str]] = None
 
 
 class ImageSearchRequest(BaseModel):
     image_base64: str
     limit: Optional[int] = 20
+    allowed_uids: Optional[List[str]] = None
 
 
 class VideoIndexRequest(BaseModel):
@@ -49,3 +51,4 @@ class LyricsIndexRequest(BaseModel):
 class TextSearchRequest(BaseModel):
     text: str
     limit: Optional[int] = 20
+    allowed_uids: Optional[List[str]] = None

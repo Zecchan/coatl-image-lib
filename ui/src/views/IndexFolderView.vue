@@ -79,7 +79,7 @@
       <div v-if="!result.isAudio && tagging" class="analysis-card" style="margin-top:1.25rem">
         <div style="display:flex;align-items:center;gap:.5rem;color:#555570;font-size:.82rem">
           <RotateCw :size="13" class="spin" />
-          Analyzing {{ result.samples.length }} samples with WD14…
+          Analyzing {{ taggingCount }} samples with WD14…
         </div>
       </div>
 
@@ -114,6 +114,14 @@
           </div>
         </template>
         </div>
+      </div>
+
+      <!-- Full retag button: shown after sample tagging if 12 < total <= 100 and not yet done -->
+      <div v-if="tagResult && !fullTagDone && result.allFiles?.length" style="margin-top:.75rem">
+        <button class="btn-secondary" :disabled="tagging" @click="runFullTagging" style="font-size:.82rem">
+          <RotateCw v-if="tagging" :size="13" class="spin" style="margin-right:.35rem" />
+          {{ tagging ? 'Re-analyzing…' : `Retag with all ${result.total} files` }}
+        </button>
       </div>
     </template>
 
@@ -160,8 +168,10 @@ const loading           = ref(false)
 const error             = ref('')
 const result            = ref(null)
 const tagging           = ref(false)
+const taggingCount      = ref(0)
 const tagResult         = ref(null)
 const tagExpanded       = ref(true)
+const fullTagDone       = ref(false)
 
 const saveEnabled = computed(() =>
   !!result.value &&
@@ -222,6 +232,7 @@ async function load() {
   error.value    = ''
   result.value   = null
   tagResult.value = null
+  fullTagDone.value = false
   try {
     const res  = await fetch('/scan/preview', {
       method:  'POST',
@@ -243,6 +254,7 @@ async function load() {
 
 async function runTagging(samples) {
   tagging.value   = true
+  taggingCount.value = samples.length
   tagResult.value = null
   try {
     const results = []
@@ -299,6 +311,13 @@ async function runTagging(samples) {
       }).catch(() => {})
     }
   }
+}
+
+async function runFullTagging() {
+  const allFiles = result.value?.allFiles ?? []
+  if (!allFiles.length) return
+  await runTagging(allFiles)
+  fullTagDone.value = true
 }
 
 function openSave() {

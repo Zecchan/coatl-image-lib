@@ -7,7 +7,7 @@ const router = Router();
 
 const RATING_ORDER = ['general', 'sensitive', 'questionable', 'explicit'];
 
-// Mirrors SELECT_MEDIA in medias.js — must include qdrant_indexed_at.
+// Mirrors SELECT_MEDIA in medias.js — must stay in sync.
 const SELECT_MEDIA = `
   SELECT
     m.uid, m.title, m.original_title, m.path, m.cover,
@@ -16,8 +16,9 @@ const SELECT_MEDIA = `
     m.developer, m.publisher, m.release_date, m.platform,
     m.duration, m.track_count,
     m.language, m.notes,
+    m.is_favorite,
     m.created_at, m.updated_at, m.qdrant_indexed_at,
-    ms.uid  AS mediasourceUid,  ms.name AS mediasourceName,
+    ms.uid  AS mediasourceUid,  ms.name AS mediasourceName, ms.path AS mediasourcePath,
     mt.uid  AS mediatypeUid,    mt.name AS mediatypeName, mt.color AS mediatypeColor, mt.type AS mediatypeType
   FROM medias m
   JOIN mediasources ms ON ms.id = m.mediasource_id
@@ -62,14 +63,65 @@ function rrfMerge(imageHits, textHits, k = 60) {
     .map(([media_uid, entry]) => ({ media_uid, ...entry }));
 }
 
+/**
+ * Pre-filter: query SQLite for all media_uids that satisfy the active filters.
+ * Returns null  → no filters active, Qdrant should run unfiltered.
+ * Returns []    → filters active but nothing matches; caller should short-circuit.
+ * Returns [...] → the set of allowed media_uids to pass to Qdrant.
+ */
+function getAllowedUids(db, { mediatypeUids = [], maxRating = 'explicit', favoritesOnly = false, minQuality = 0 } = {}) {
+  const hasFilters = mediatypeUids.length > 0 ||
+    maxRating !== 'explicit' ||
+    favoritesOnly ||
+    minQuality > 0;
+  if (!hasFilters) return null;
+
+  const whereClauses = [];
+  const params = [];
+
+  if (mediatypeUids.length) {
+    whereClauses.push(`mt.uid IN (${mediatypeUids.map(() => '?').join(',')})`);
+    params.push(...mediatypeUids);
+  }
+
+  const maxRatingIdx = RATING_ORDER.indexOf(maxRating);
+  if (maxRatingIdx >= 0 && maxRatingIdx < RATING_ORDER.length - 1) {
+    const allowed = RATING_ORDER.slice(0, maxRatingIdx + 1);
+    whereClauses.push(`m.content_rating IN (${allowed.map(() => '?').join(',')})`);
+    params.push(...allowed);
+  }
+
+  if (favoritesOnly) {
+    whereClauses.push('m.is_favorite = 1');
+  }
+
+  if (minQuality > 0) {
+    whereClauses.push('COALESCE(m.rating, 0) >= ?');
+    params.push(minQuality);
+  }
+
+  const where = whereClauses.length ? ' WHERE ' + whereClauses.join(' AND ') : '';
+  const rows = db.prepare(`
+    SELECT DISTINCT m.uid
+    FROM medias m
+    JOIN mediasources ms ON ms.id = m.mediasource_id
+    JOIN mediatypes  mt ON mt.id = ms.mediatype_id
+    ${where}
+  `).all(...params);
+  return rows.map(r => r.uid);
+}
+
 // POST /db/search
-// Body: { text, limit?, mediatypeUids?, maxRating? }
-// Calls Python /search_images AND /search_text in parallel, merges with RRF,
-// then hydrates full media rows from SQLite.
+// Body: { text, limit?, mediatypeUids?, maxRating?, favoritesOnly?, minQuality? }
+// Pre-filters in SQLite → passes allowed_uids to Python → Qdrant scores within that set.
 // Returns { results: [...media, semanticScore, matchedTrack?] }.
 router.post('/', async (req, res) => {
-  const { text, limit = 20, mediatypeUids = [], maxRating = 'explicit' } = req.body ?? {};
+  const { text, limit = 20, mediatypeUids = [], maxRating = 'explicit', favoritesOnly = false, minQuality = 0 } = req.body ?? {};
   if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
+
+  const db = getDb();
+  const allowedUids = getAllowedUids(db, { mediatypeUids, maxRating, favoritesOnly, minQuality });
+  if (allowedUids !== null && allowedUids.length === 0) return res.json({ results: [] });
 
   const apiPort = parseInt(process.env.API_PORT) || 8000;
 
@@ -78,12 +130,12 @@ router.post('/', async (req, res) => {
     fetch(`http://127.0.0.1:${apiPort}/search_images`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text.trim(), limit }),
+      body: JSON.stringify({ text: text.trim(), limit, allowed_uids: allowedUids }),
     }).then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))),
     fetch(`http://127.0.0.1:${apiPort}/search_text`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text.trim(), limit }),
+      body: JSON.stringify({ text: text.trim(), limit, allowed_uids: allowedUids }),
     }).then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))),
   ]);
 
@@ -109,26 +161,11 @@ router.post('/', async (req, res) => {
     }
   }
 
-  const db = getDb();
   const mergedUids = merged.map(m => m.media_uid);
 
-  // Fetch full rows, optionally filtered by mediatype / content rating
-  const whereClauses = [`m.uid IN (${mergedUids.map(() => '?').join(',')})`];
-  const params = [...mergedUids];
-
-  if (mediatypeUids.length) {
-    whereClauses.push(`mt.uid IN (${mediatypeUids.map(() => '?').join(',')})`);
-    params.push(...mediatypeUids);
-  }
-
-  const maxRatingIdx = RATING_ORDER.indexOf(maxRating);
-  if (maxRatingIdx >= 0 && maxRatingIdx < RATING_ORDER.length - 1) {
-    const allowed = RATING_ORDER.slice(0, maxRatingIdx + 1);
-    whereClauses.push(`m.content_rating IN (${allowed.map(() => '?').join(',')})`);
-    params.push(...allowed);
-  }
-
-  const rows = db.prepare(SELECT_MEDIA + ' WHERE ' + whereClauses.join(' AND ')).all(...params);
+  // Hydrate from SQLite — Qdrant already applied the filters, just join by uid
+  const rows = db.prepare(SELECT_MEDIA + ` WHERE m.uid IN (${mergedUids.map(() => '?').join(',')})`)
+    .all(...mergedUids);
   const withTags = attachTags(db, rows);
 
   // Build score maps — sort by RRF, display best raw cosine score
@@ -155,11 +192,15 @@ router.post('/', async (req, res) => {
 });
 
 // POST /db/search/by-image
-// Body: { image_base64, limit?, mediatypeUids?, maxRating? }
-// The browser must pre-resize to ≤512px before encoding — keeps payload tiny regardless of source size.
+// Body: { image_base64, limit?, mediatypeUids?, maxRating?, favoritesOnly?, minQuality? }
+// Pre-filters in SQLite → passes allowed_uids to Python → Qdrant scores within that set.
 router.post('/by-image', async (req, res) => {
-  const { image_base64, limit = 20, mediatypeUids = [], maxRating = 'explicit' } = req.body ?? {};
+  const { image_base64, limit = 20, mediatypeUids = [], maxRating = 'explicit', favoritesOnly = false, minQuality = 0 } = req.body ?? {};
   if (!image_base64?.trim()) return res.status(400).json({ error: 'image_base64 is required' });
+
+  const db = getDb();
+  const allowedUids = getAllowedUids(db, { mediatypeUids, maxRating, favoritesOnly, minQuality });
+  if (allowedUids !== null && allowedUids.length === 0) return res.json({ results: [] });
 
   const apiPort = parseInt(process.env.API_PORT) || 8000;
   let hits;
@@ -167,7 +208,7 @@ router.post('/by-image', async (req, res) => {
     const r = await fetch(`http://127.0.0.1:${apiPort}/search_by_image`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_base64, limit }),
+      body: JSON.stringify({ image_base64, limit, allowed_uids: allowedUids }),
     });
     if (!r.ok) return res.status(502).json({ error: 'Python API error' });
     const data = await r.json();
@@ -178,82 +219,12 @@ router.post('/by-image', async (req, res) => {
 
   if (!hits.length) return res.json({ results: [] });
 
-  const db = getDb();
   const scoreMap = {};
   const uids = hits.map(h => { scoreMap[h.media_uid] = h.score; return h.media_uid; });
 
-  const whereClauses = [`m.uid IN (${uids.map(() => '?').join(',')})`];
-  const params = [...uids];
-
-  if (mediatypeUids.length) {
-    whereClauses.push(`mt.uid IN (${mediatypeUids.map(() => '?').join(',')})`);
-    params.push(...mediatypeUids);
-  }
-
-  const maxRatingIdx = RATING_ORDER.indexOf(maxRating);
-  if (maxRatingIdx >= 0 && maxRatingIdx < RATING_ORDER.length - 1) {
-    const allowed = RATING_ORDER.slice(0, maxRatingIdx + 1);
-    whereClauses.push(`m.content_rating IN (${allowed.map(() => '?').join(',')})`);
-    params.push(...allowed);
-  }
-
-  const rows = db.prepare(SELECT_MEDIA + ' WHERE ' + whereClauses.join(' AND ')).all(...params);
-  const withTags = attachTags(db, rows);
-
-  const scoreOrder = Object.fromEntries(uids.map((u, i) => [u, i]));
-  withTags.sort((a, b) => (scoreOrder[a.uid] ?? 999) - (scoreOrder[b.uid] ?? 999));
-  const results = withTags.map(r => ({ ...r, semanticScore: scoreMap[r.uid] ?? 0 }));
-
-  res.json({ results });
-});
-
-module.exports = router;
-
-
-// POST /db/search/by-image
-// Body: { image_base64, limit?, mediatypeUids?, maxRating? }
-// The browser must pre-resize to ≤512px before encoding — keeps payload tiny regardless of source size.
-router.post('/by-image', async (req, res) => {
-  const { image_base64, limit = 20, mediatypeUids = [], maxRating = 'explicit' } = req.body ?? {};
-  if (!image_base64?.trim()) return res.status(400).json({ error: 'image_base64 is required' });
-
-  const apiPort = parseInt(process.env.API_PORT) || 8000;
-  let hits;
-  try {
-    const r = await fetch(`http://127.0.0.1:${apiPort}/search_by_image`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_base64, limit }),
-    });
-    if (!r.ok) return res.status(502).json({ error: 'Python API error' });
-    const data = await r.json();
-    hits = data.results;
-  } catch (e) {
-    return res.status(502).json({ error: `Could not reach Python API: ${e.message}` });
-  }
-
-  if (!hits.length) return res.json({ results: [] });
-
-  const db = getDb();
-  const scoreMap = {};
-  const uids = hits.map(h => { scoreMap[h.media_uid] = h.score; return h.media_uid; });
-
-  const whereClauses = [`m.uid IN (${uids.map(() => '?').join(',')})`];
-  const params = [...uids];
-
-  if (mediatypeUids.length) {
-    whereClauses.push(`mt.uid IN (${mediatypeUids.map(() => '?').join(',')})`);
-    params.push(...mediatypeUids);
-  }
-
-  const maxRatingIdx = RATING_ORDER.indexOf(maxRating);
-  if (maxRatingIdx >= 0 && maxRatingIdx < RATING_ORDER.length - 1) {
-    const allowed = RATING_ORDER.slice(0, maxRatingIdx + 1);
-    whereClauses.push(`m.content_rating IN (${allowed.map(() => '?').join(',')})`);
-    params.push(...allowed);
-  }
-
-  const rows = db.prepare(SELECT_MEDIA + ' WHERE ' + whereClauses.join(' AND ')).all(...params);
+  // Hydrate from SQLite — Qdrant already applied the filters, just join by uid
+  const rows = db.prepare(SELECT_MEDIA + ` WHERE m.uid IN (${uids.map(() => '?').join(',')})`)
+    .all(...uids);
   const withTags = attachTags(db, rows);
 
   const scoreOrder = Object.fromEntries(uids.map((u, i) => [u, i]));

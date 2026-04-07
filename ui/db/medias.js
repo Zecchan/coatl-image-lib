@@ -49,6 +49,7 @@ const SELECT_MEDIA = `
     m.developer, m.publisher, m.release_date, m.platform,
     m.duration, m.track_count,
     m.language, m.notes,
+    m.is_favorite,
     m.created_at, m.updated_at, m.qdrant_indexed_at,
     ms.uid  AS mediasourceUid,  ms.name AS mediasourceName, ms.path AS mediasourcePath,
     mt.uid  AS mediatypeUid,    mt.name AS mediatypeName, mt.color AS mediatypeColor, mt.type AS mediatypeType
@@ -103,6 +104,8 @@ router.get('/', (req, res) => {
   const mtuids = req.query.mediatypeUids
     ? req.query.mediatypeUids.split(',').map(s => s.trim()).filter(Boolean)
     : [];
+  const favoritesOnly = req.query.favoritesOnly === '1';
+  const minQuality = parseInt(req.query.minQuality, 10);
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 25));
 
@@ -155,6 +158,16 @@ router.get('/', (req, res) => {
     const allowed = RATING_ORDER.slice(0, maxRatingIdx + 1);
     whereClauses.push(`m.content_rating IN (${allowed.map(() => '?').join(',')})`);
     params.push(...allowed);
+  }
+
+  if (favoritesOnly) {
+    whereClauses.push('m.is_favorite = 1');
+  }
+
+  // Quality rating filter: rating NULL treated as 0
+  if (!isNaN(minQuality) && minQuality > 0) {
+    whereClauses.push('COALESCE(m.rating, 0) >= ?');
+    params.push(minQuality);
   }
 
   // ── Build query ──────────────────────────────────────────────────────────
@@ -285,6 +298,18 @@ router.post('/:uid/cover', express.raw({ type: '*/*', limit: '20mb' }), (req, re
     return res.status(500).json({ error: `DB update failed: ${e.message}` });
   }
 
+  const updated = db.prepare(SELECT_MEDIA + ' WHERE m.uid = ?').get(req.params.uid);
+  res.json(attachTags(db, [updated])[0]);
+});
+
+// ── PATCH /db/medias/:uid/favorite ───────────────────────────────────────────
+router.patch('/:uid/favorite', (req, res) => {
+  const db = getDb();
+  const row = db.prepare('SELECT id, is_favorite FROM medias WHERE uid = ?').get(req.params.uid);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const newVal = row.is_favorite ? 0 : 1;
+  db.prepare("UPDATE medias SET is_favorite = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE uid = ?")
+    .run(newVal, req.params.uid);
   const updated = db.prepare(SELECT_MEDIA + ' WHERE m.uid = ?').get(req.params.uid);
   res.json(attachTags(db, [updated])[0]);
 });

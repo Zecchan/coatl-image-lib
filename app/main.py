@@ -97,7 +97,7 @@ def delete_index(media_uid: str):
 # SEMANTIC TEXT SEARCH
 @app.post("/search_images")
 def search_images(req: SearchRequest):
-    hits = qdrant_service.search_by_text(req.text, req.limit)
+    hits = qdrant_service.search_by_text(req.text, req.limit, req.allowed_uids)
     return {"results": hits}
 
 
@@ -112,7 +112,7 @@ def search_by_image(req: ImageSearchRequest):
     except Exception as e:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
-    hits = qdrant_service.search_by_image(image, req.limit)
+    hits = qdrant_service.search_by_image(image, req.limit, req.allowed_uids)
     return {"results": hits}
 
 
@@ -146,7 +146,7 @@ def delete_text_media(media_uid: str):
 # SEMANTIC TEXT SEARCH (lyrics / text)
 @app.post("/search_text")
 def search_text(req: TextSearchRequest):
-    hits = text_qdrant_service.search(req.text, req.limit)
+    hits = text_qdrant_service.search(req.text, req.limit, req.allowed_uids)
     return {"results": hits}
 
 

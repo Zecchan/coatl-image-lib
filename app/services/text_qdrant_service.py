@@ -9,6 +9,7 @@ from qdrant_client.models import (
     Filter,
     FieldCondition,
     MatchValue,
+    MatchAny,
     FilterSelector,
 )
 
@@ -94,17 +95,22 @@ class TextQdrantService:
         except Exception as e:
             print(f"[text_qdrant] delete_by_media failed for {media_uid}: {e}")
 
-    def search(self, query: str, limit: int = 20) -> List[dict]:
+    def search(self, query: str, limit: int = 20, allowed_uids=None) -> List[dict]:
         """Return [{audiofile_uid, media_uid, score}] sorted by score desc."""
         self.ensure_collection()
         client = self._get_client()
         try:
             embedding = text_service.embed(query)
+            query_filter = (
+                Filter(must=[FieldCondition(key="media_uid", match=MatchAny(any=allowed_uids))])
+                if allowed_uids is not None else None
+            )
             response = client.query_points(
                 collection_name=TEXT_COLLECTION_NAME,
                 query=embedding,
                 limit=limit,
                 with_payload=True,
+                query_filter=query_filter,
             )
             return [
                 {

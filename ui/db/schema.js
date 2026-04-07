@@ -120,6 +120,8 @@ function applySchema(db) {
   // ALTER TABLE does not support IF NOT EXISTS; ignore error if column exists.
   try { db.exec('ALTER TABLE medias ADD COLUMN qdrant_indexed_at TEXT DEFAULT NULL'); } catch { }
   try { db.exec('ALTER TABLE audiofiles ADD COLUMN qdrant_indexed_at TEXT DEFAULT NULL'); } catch { }
+  try { db.exec('ALTER TABLE medias ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0'); } catch { }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_medias_is_favorite ON medias(is_favorite)'); } catch { }
 
   // audiofiles: individual audio tracks within a music collection (type 3)
   db.exec(`

@@ -47,9 +47,9 @@ function sampleImages(files, n) {
   const picks = [];
   for (let g = 0; g < groupCount; g++) {
     const start = Math.floor((g * rest.length) / groupCount);
-    const end   = Math.floor(((g + 1) * rest.length) / groupCount);
+    const end = Math.floor(((g + 1) * rest.length) / groupCount);
     const group = rest.slice(start, end);
-    const pick  = group[Math.floor(Math.random() * group.length)];
+    const pick = group[Math.floor(Math.random() * group.length)];
     picks.push(pick.f);
   }
   return [first, ...picks];
@@ -331,10 +331,12 @@ function previewImageCollection(req, res) {
 
   const all = walkImages(absDir);
   const samples = sampleImages(all, 12);
+  const includeAll = all.length > 12 && all.length <= 100;
   res.json({
     total: all.length,
     dir: absDir,
     samples: samples.map(f => ({ name: path.relative(absDir, f), abs: f })),
+    allFiles: includeAll ? all.map(f => ({ name: path.relative(absDir, f), abs: f })) : [],
   });
 }
 

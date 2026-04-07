@@ -109,6 +109,25 @@
             >{{ r.label }}</button>
           </div>
         </div>
+
+        <!-- Favorites only -->
+        <div class="filter-row">
+          <span class="filter-label">Favorites</span>
+          <button class="fav-toggle" :class="{ active: favoritesOnly }" @click="favoritesOnly = !favoritesOnly; saveFilterCookie()">
+            <Star :size="13" style="margin-right:.35rem" />{{ favoritesOnly ? 'Favorites only' : 'All' }}
+          </button>
+        </div>
+
+        <!-- Min quality rating -->
+        <div class="filter-row">
+          <span class="filter-label">Min quality</span>
+          <div class="quality-range">
+            <input type="range" min="0" max="5" step="1" v-model.number="minQuality"
+              @change="saveFilterCookie()"
+              class="quality-slider" />
+            <span class="quality-val">{{ minQuality }}</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -144,6 +163,8 @@
           </div>
           <!-- Content rating badge -->
           <span class="cr-badge" :class="`cr-${m.content_rating}`">{{ m.content_rating }}</span>
+          <!-- Favorite toggle -->
+          <button class="fav-btn" :class="{ active: m.is_favorite }" :title="m.is_favorite ? 'Remove from favorites' : 'Add to favorites'" @click.stop="toggleFavorite(m, $event)"><Star :size="13" /></button>
           <!-- Embedded in Qdrant indicator -->
           <span v-if="m.qdrant_indexed_at" class="embed-badge" title="Embedded for semantic search"><Zap :size="11" /></span>
           <!-- Semantic similarity score -->
@@ -196,7 +217,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Search, Images, SlidersHorizontal, ChevronDown, Zap, ImagePlus, X } from 'lucide-vue-next'
+import { Search, Images, SlidersHorizontal, ChevronDown, Zap, ImagePlus, X, Star } from 'lucide-vue-next'
 
 const route  = useRoute()
 const router = useRouter()
@@ -281,6 +302,8 @@ function saveFilterCookie() {
   const val = JSON.stringify({
     mediatypeUids: selectedMediatypeUids.value,
     maxRating: maxRating.value,
+    favoritesOnly: favoritesOnly.value,
+    minQuality: minQuality.value,
   })
   document.cookie = `${FILTER_COOKIE}=${encodeURIComponent(val)};max-age=${COOKIE_MAX_AGE};path=/`
 }
@@ -292,6 +315,8 @@ function loadFilterCookie() {
     const data = JSON.parse(decodeURIComponent(entry.slice(FILTER_COOKIE.length + 1)))
     if (Array.isArray(data.mediatypeUids)) selectedMediatypeUids.value = data.mediatypeUids
     if (data.maxRating && RATING_ORDER.includes(data.maxRating)) maxRating.value = data.maxRating
+    if (typeof data.favoritesOnly === 'boolean') favoritesOnly.value = data.favoritesOnly
+    if (typeof data.minQuality === 'number') minQuality.value = data.minQuality
   } catch { /* ignore corrupt cookie */ }
 }
 
@@ -300,6 +325,8 @@ const filterOpen          = ref(false)
 const mediatypes            = ref([])
 const selectedMediatypeUids = ref([])
 const maxRating             = ref('explicit')
+const favoritesOnly         = ref(false)
+const minQuality            = ref(0)
 
 const RATING_ORDER = ['general', 'sensitive', 'questionable', 'explicit']
 const RATINGS = [
@@ -311,7 +338,10 @@ const RATINGS = [
 
 // hasFilters reflects the pending panel state (visual cue before searching)
 const hasFilters = computed(() =>
-  selectedMediatypeUids.value.length > 0 || maxRating.value !== 'explicit'
+  selectedMediatypeUids.value.length > 0 ||
+  maxRating.value !== 'explicit' ||
+  favoritesOnly.value ||
+  minQuality.value > 0
 )
 
 function toggleMediatype(uid) {
@@ -323,7 +353,7 @@ function toggleMediatype(uid) {
 
 // ── Active query (what the backend is currently showing) ──────────────────────
 // Captured from the form on Search click; page navigation reuses it.
-const activeQuery = ref({ q: '', mediatypeUids: [], maxRating: 'explicit' })
+const activeQuery = ref({ q: '', mediatypeUids: [], maxRating: 'explicit', favoritesOnly: false, minQuality: 0 })
 
 const totalPages   = computed(() => isSemantic.value ? 1 : Math.ceil(total.value / pageSize.value) || 1)
 
@@ -363,6 +393,8 @@ async function runFetch() {
   if (aq.q)                        p.set('q', aq.q)
   if (aq.mediatypeUids.length)     p.set('mediatypeUids', aq.mediatypeUids.join(','))
   if (aq.maxRating !== 'explicit') p.set('maxRating', aq.maxRating)
+  if (aq.favoritesOnly)            p.set('favoritesOnly', '1')
+  if (aq.minQuality > 0)           p.set('minQuality', aq.minQuality)
   p.set('page',     page.value)
   p.set('pageSize', pageSize.value)
 
@@ -398,6 +430,8 @@ async function runSemanticFetch() {
         limit: 20,
         mediatypeUids: activeQuery.value.mediatypeUids,
         maxRating: activeQuery.value.maxRating,
+        favoritesOnly: activeQuery.value.favoritesOnly,
+        minQuality: activeQuery.value.minQuality,
       }),
     })
     if (!res.ok) throw new Error(await res.text())
@@ -428,6 +462,8 @@ async function runImageFetch() {
         limit: 20,
         mediatypeUids: activeQuery.value.mediatypeUids,
         maxRating: activeQuery.value.maxRating,
+        favoritesOnly: activeQuery.value.favoritesOnly,
+        minQuality: activeQuery.value.minQuality,
       }),
     })
     if (!res.ok) throw new Error(await res.text())
@@ -452,6 +488,8 @@ async function doSearch() {
     q:             searchText.value.trim(),
     mediatypeUids: [...selectedMediatypeUids.value],
     maxRating:     maxRating.value,
+    favoritesOnly: favoritesOnly.value,
+    minQuality:    minQuality.value,
   }
   page.value = 1
   if (isSemantic.value) {
@@ -490,12 +528,18 @@ async function onPageSizeChange() {
   await runFetch()
 }
 
+async function toggleFavorite(m, e) {
+  e.stopPropagation()
+  const res = await fetch(`/db/medias/${m.uid}/favorite`, { method: 'PATCH' })
+  if (res.ok) {
+    const updated = await res.json()
+    m.is_favorite = updated.is_favorite
+  }
+}
+
 function clearSearch() {
   searchText.value            = ''
-  selectedMediatypeUids.value = []
-  maxRating.value             = 'explicit'
-  activeQuery.value           = { q: '', mediatypeUids: [], maxRating: 'explicit' }
-  saveFilterCookie()
+  activeQuery.value           = { q: '', mediatypeUids: selectedMediatypeUids.value, maxRating: maxRating.value }
   page.value                  = 1
   queryImage.value            = null
   if (isSemantic.value) {
@@ -527,7 +571,7 @@ onMounted(async () => {
   } catch { mediatypes.value = [] }
   loadFilterCookie()
   // Sync activeQuery so the initial fetch respects cookie-loaded filters
-  activeQuery.value = { q: '', mediatypeUids: [...selectedMediatypeUids.value], maxRating: maxRating.value }
+  activeQuery.value = { q: '', mediatypeUids: selectedMediatypeUids.value, maxRating: maxRating.value, favoritesOnly: favoritesOnly.value, minQuality: minQuality.value }
   // Open the filter panel if filters are active so user can see them
   if (hasFilters.value) filterOpen.value = true
   // If we were navigated here with ?q= (e.g. from tag click in MediaView), pre-fill and search
@@ -708,6 +752,29 @@ code { background: #1e1e30; border-radius: 3px; padding: 0 .35em; font-size: .88
 }
 .rating-btn:hover { border-color: #444460; color: #9090b0; }
 
+/* Favorites toggle in filter panel */
+.fav-toggle {
+  display: inline-flex; align-items: center;
+  background: #1a1a28; border: 1px solid #2a2a3e;
+  color: #555570; font-size: .72rem; border-radius: 6px;
+  padding: .22em .8em; cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.fav-toggle:hover { border-color: #444460; color: #9090b0; }
+.fav-toggle.active { background: #2a2010; border-color: #f0c04088; color: #f0c040; }
+
+/* Quality range slider row */
+.quality-range {
+  display: flex; align-items: center; gap: .5rem; flex: 1;
+}
+.quality-slider {
+  flex: 1; accent-color: #b090f0;
+  appearance: auto; height: 4px; cursor: pointer;
+}
+.quality-val {
+  font-size: .72rem; color: #9090b0; min-width: 1.5rem; text-align: center;
+}
+
 /* Search mode toggle */
 .mode-toggle { display: flex; border: 1px solid #252535; border-radius: 6px; overflow: hidden; flex-shrink: 0; }
 .mode-btn {
@@ -758,6 +825,18 @@ code { background: #1e1e30; border-radius: 3px; padding: 0 .35em; font-size: .88
   width: 1.35rem; height: 1.35rem; border-radius: 4px;
   background: #1a1535cc; color: #b090f0; border: 1px solid #7c5cbf55;
 }
+
+/* Favorite button */
+.fav-btn {
+  position: absolute; top: .4rem; left: .4rem;
+  display: flex; align-items: center; justify-content: center;
+  width: 1.55rem; height: 1.55rem; border-radius: 4px;
+  background: #12121acc; border: 1px solid #ffffff18; cursor: pointer;
+  color: #555570; transition: color .15s, background .15s;
+  padding: 0;
+}
+.fav-btn:hover { color: #f0c040; background: #1a1a2acc; }
+.fav-btn.active { color: #f0c040; background: #2a2010cc; border-color: #f0c04055; }
 
 /* Semantic score badge */
 .score-badge {

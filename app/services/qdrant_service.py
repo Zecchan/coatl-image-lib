@@ -183,7 +183,7 @@ class QdrantService:
             try:
                 r = subprocess.run(
                     ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', '-show_format', vid_path],
-                    capture_output=True, text=True, timeout=10,
+                    capture_output=True, encoding='utf-8', errors='replace', timeout=10,
                 )
                 data = _json.loads(r.stdout)
                 stream = next(

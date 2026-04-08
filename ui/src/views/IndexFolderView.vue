@@ -185,6 +185,7 @@ const fullTagDone       = ref(false)
 
 const saveEnabled = computed(() =>
   !!result.value &&
+  (result.value.total ?? 0) > 0 &&
   !!selectedSourceUid.value &&
   scanPath.value.trim() === loadedDir.value &&
   !loading.value && !tagging.value

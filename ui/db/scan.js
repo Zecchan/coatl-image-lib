@@ -345,15 +345,9 @@ function slugify(str) {
     .replace(/ +/g, '-');
 }
 
-// Recursively copy a directory.
-function copyDirSync(src, dest) {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const s = path.join(src, entry.name);
-    const d = path.join(dest, entry.name);
-    if (entry.isDirectory()) copyDirSync(s, d);
-    else fs.copyFileSync(s, d);
-  }
+// Recursively copy a directory (async — delegates I/O to libuv thread pool).
+function copyDirAsync(src, dest) {
+  return fs.promises.cp(src, dest, { recursive: true });
 }
 
 // POST /preview  { dir, mediatypeType }
@@ -836,7 +830,7 @@ router.post('/open-explorer', (req, res) => {
   }
 });
 
-router.post('/save', (req, res) => {
+router.post('/save', async (req, res) => {
   const { mediasourceUid, scanDir, form, moveContent = true } = req.body ?? {};
 
   if (!mediasourceUid) return res.status(400).json({ error: 'mediasourceUid is required' });
@@ -883,14 +877,14 @@ router.post('/save', (req, res) => {
     if (fs.existsSync(destDir))
       return res.status(409).json({ error: `Destination already exists: ${destDir}` });
     try {
-      copyDirSync(absSource, destDir);
+      await copyDirAsync(absSource, destDir);
     } catch (e) {
-      try { fs.rmSync(destDir, { recursive: true, force: true }); } catch { }
+      try { await fs.promises.rm(destDir, { recursive: true, force: true }); } catch { }
       return res.status(500).json({ error: `Copy failed: ${e.message}` });
     }
     if (moveContent) {
       try {
-        fs.rmSync(absSource, { recursive: true, force: true });
+        await fs.promises.rm(absSource, { recursive: true, force: true });
       } catch (e) {
         console.warn('[scan/save] Could not delete source dir:', e.message);
       }

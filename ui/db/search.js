@@ -172,13 +172,13 @@ router.post('/', async (req, res) => {
     .all(...mergedUids);
   const withTags = attachTags(db, rows);
 
-  // Build score maps — sort by RRF, display best raw cosine score
+  // Build score maps — RRF used for dedup/merge, raw score used for final display order
   const rrfScoreMap = Object.fromEntries(merged.map(m => [m.media_uid, m.rrfScore]));
   const rawScoreMap = Object.fromEntries(merged.map(m => [
     m.media_uid,
     Math.max(m.imageHit?.score ?? 0, m.textHit?.score ?? 0),
   ]));
-  withTags.sort((a, b) => (rrfScoreMap[b.uid] ?? 0) - (rrfScoreMap[a.uid] ?? 0));
+  withTags.sort((a, b) => (rawScoreMap[b.uid] ?? 0) - (rawScoreMap[a.uid] ?? 0));
 
   // Attach audiofile title or document filename for text matches
   const afStmt = db.prepare('SELECT title, filename FROM audiofiles WHERE uid = ?');

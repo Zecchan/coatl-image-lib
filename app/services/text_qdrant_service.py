@@ -95,8 +95,86 @@ class TextQdrantService:
         except Exception as e:
             print(f"[text_qdrant] delete_by_media failed for {media_uid}: {e}")
 
+    def index_documents(self, media_uid: str, documents, chunk_size: int = 200, max_chunks: int = 500) -> dict:
+        """Embed document chunks proportionally and upsert into Qdrant."""
+        import random
+        from collections import defaultdict
+        from app.services.document_service import extract_text, chunk_text
+
+        self.ensure_collection()
+        client = self._get_client()
+
+        # Delete existing document points for this media
+        try:
+            client.delete(
+                collection_name=TEXT_COLLECTION_NAME,
+                points_selector=FilterSelector(
+                    filter=Filter(
+                        must=[
+                            FieldCondition(key="media_uid", match=MatchValue(value=media_uid)),
+                            FieldCondition(key="point_type", match=MatchValue(value="document")),
+                        ]
+                    )
+                ),
+            )
+        except Exception as e:
+            print(f"[text_qdrant] delete existing document points failed: {e}")
+
+        # Extract and chunk all documents
+        chunks_by_doc = defaultdict(list)  # rel_path -> [(chunk_idx, chunk_text)]
+        for doc in documents:
+            text = extract_text(doc.abs_path)
+            if not text.strip():
+                continue
+            for i, chunk in enumerate(chunk_text(text, chunk_size)):
+                chunks_by_doc[doc.rel_path].append((i, chunk))
+
+        total_chunks = sum(len(v) for v in chunks_by_doc.values())
+        if total_chunks == 0:
+            return {"indexed": 0, "documents": 0}
+
+        # Proportional budget per document
+        selected: list = []
+        if total_chunks <= max_chunks:
+            for rel_path, chunks in chunks_by_doc.items():
+                for chunk_idx, chunk_text_val in chunks:
+                    selected.append((rel_path, chunk_idx, chunk_text_val))
+        else:
+            for rel_path, chunks in chunks_by_doc.items():
+                budget = max(1, round(max_chunks * len(chunks) / total_chunks))
+                sampled = random.sample(chunks, budget) if len(chunks) > budget else chunks
+                for chunk_idx, chunk_text_val in sampled:
+                    selected.append((rel_path, chunk_idx, chunk_text_val))
+
+        # Embed and upsert in batches
+        points = []
+        for rel_path, chunk_idx, chunk_text_val in selected:
+            try:
+                embedding = text_service.embed(chunk_text_val)
+                point_id = abs(hash(f"{media_uid}::{rel_path}::{chunk_idx}")) % (2**63)
+                points.append(PointStruct(
+                    id=point_id,
+                    vector=embedding,
+                    payload={
+                        "media_uid": media_uid,
+                        "document_path": rel_path,
+                        "chunk_index": chunk_idx,
+                        "point_type": "document",
+                    },
+                ))
+            except Exception as e:
+                print(f"[text_qdrant] embed chunk failed for {rel_path}:{chunk_idx}: {e}")
+
+        BATCH = 64
+        for i in range(0, len(points), BATCH):
+            client.upsert(collection_name=TEXT_COLLECTION_NAME, points=points[i:i + BATCH])
+
+        docs_indexed = len(chunks_by_doc)
+        print(f"[text_qdrant] Indexed {len(points)} chunks from {docs_indexed} documents for media_uid={media_uid}")
+        return {"indexed": len(points), "documents": docs_indexed}
+
     def search(self, query: str, limit: int = 20, allowed_uids=None) -> List[dict]:
-        """Return [{audiofile_uid, media_uid, score}] sorted by score desc."""
+        """Return [{audiofile_uid, document_path, media_uid, score}] sorted by score desc."""
         self.ensure_collection()
         client = self._get_client()
         try:
@@ -115,6 +193,7 @@ class TextQdrantService:
             return [
                 {
                     "audiofile_uid": h.payload.get("audiofile_uid"),
+                    "document_path": h.payload.get("document_path"),
                     "media_uid": h.payload.get("media_uid"),
                     "score": h.score,
                 }

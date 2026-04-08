@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.models import TextRequest, ImageRequest, TagRequest, AnalyzeRequest, IndexRequest, SearchRequest, ImageSearchRequest, VideoIndexRequest, LyricsIndexRequest, TextSearchRequest
+from app.models import TextRequest, ImageRequest, TagRequest, AnalyzeRequest, IndexRequest, SearchRequest, ImageSearchRequest, VideoIndexRequest, LyricsIndexRequest, TextSearchRequest, DocumentIndexRequest
 from app.services.clip_service import clip_service
 from app.services.image_service import analyze_image
 from app.services.caption_service import caption_service
@@ -148,6 +148,18 @@ def delete_text_media(media_uid: str):
 def search_text(req: TextSearchRequest):
     hits = text_qdrant_service.search(req.text, req.limit, req.allowed_uids)
     return {"results": hits}
+
+
+# INDEX DOCUMENT COLLECTION
+@app.post("/index_documents")
+def index_documents(req: DocumentIndexRequest):
+    result = text_qdrant_service.index_documents(
+        req.media_uid,
+        req.documents,
+        req.chunk_size,
+        req.max_chunks,
+    )
+    return result
 
 
 # TEXT QDRANT COLLECTION STATUS

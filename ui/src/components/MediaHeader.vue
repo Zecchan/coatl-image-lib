@@ -166,9 +166,9 @@
           <div v-if="editModal.error" class="error-msg" style="margin-top:.75rem">{{ editModal.error }}</div>
         </div>
         <div class="modal-footer">
-          <label v-if="media.mediatypeType === 1 || media.mediatypeType === 2" class="reembed-check">
+          <label v-if="media.mediatypeType === 1 || media.mediatypeType === 2 || media.mediatypeType === 4" class="reembed-check">
             <input type="checkbox" v-model="editModal.reembed" :disabled="editModal.saving" />
-            {{ media.mediatypeType === 2 ? 'Re-embed videos' : 'Re-embed images' }}
+            {{ media.mediatypeType === 4 ? 'Re-embed documents' : media.mediatypeType === 2 ? 'Re-embed videos' : 'Re-embed images' }}
           </label>
           <label v-if="media.mediatypeType === 2" class="reembed-check">
             <input type="checkbox" v-model="editModal.regenThumbs" :disabled="editModal.saving" />

@@ -16,6 +16,7 @@ function getConfig() {
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif', '.avif']);
 const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.webm', '.avi', '.mov', '.wmv', '.flv', '.m4v', '.ts', '.m2ts']);
 const AUDIO_EXTS = new Set(['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.opus', '.wma']);
+const DOCUMENT_EXTS = new Set(['.txt', '.md', '.rst', '.docx', '.pdf']);
 
 // Walk directory recursively, collect absolute paths of files matching extSet, sorted by path.
 function walkFiles(dir, extSet) {
@@ -37,6 +38,7 @@ function walkFiles(dir, extSet) {
 function walkImages(dir) { return walkFiles(dir, IMAGE_EXTS); }
 function walkVideos(dir) { return walkFiles(dir, VIDEO_EXTS); }
 function walkAudios(dir) { return walkFiles(dir, AUDIO_EXTS); }
+function walkDocuments(dir) { return walkFiles(dir, DOCUMENT_EXTS); }
 
 // Returns first image (by filename sort) + one representative from each of (n-1) filesize groups.
 function sampleImages(files, n) {
@@ -231,6 +233,33 @@ function indexVideoCollection(newUid, destDir) {
   }).catch(e => console.warn('[qdrant] index_video failed:', e.message));
 }
 
+function indexDocumentCollection(newUid, destDir) {
+  const docPaths = walkDocuments(destDir);
+  if (!docPaths.length) return;
+  const apiPort = parseInt(process.env.API_PORT) || 8000;
+  const maxChunks = getConfig().embedding?.maxTextChunksPerCollection || 500;
+  const documents = docPaths.map(f => ({
+    abs_path: f,
+    rel_path: path.relative(destDir, f).replace(/\\/g, '/'),
+  }));
+  fetch(`http://127.0.0.1:${apiPort}/index_documents`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ media_uid: newUid, documents, max_chunks: maxChunks }),
+  }).then(async r => {
+    if (r.ok) {
+      const data = await r.json();
+      if ((data.indexed ?? 0) > 0) {
+        getDb().prepare("UPDATE medias SET qdrant_indexed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE uid = ?")
+          .run(newUid);
+      }
+      console.log(`[qdrant] index_documents uid=${newUid}: ${data.indexed} chunks from ${data.documents} docs`);
+    } else {
+      console.warn(`[qdrant] index_documents uid=${newUid}: HTTP ${r.status}`);
+    }
+  }).catch(e => console.warn('[qdrant] index_documents failed:', e.message));
+}
+
 /**
  * Scan audio files in destDir, insert rows into audiofiles table for each track.
  * Filename stem is used as the default title.
@@ -389,12 +418,28 @@ function previewAudioCollection(req, res) {
   res.json({ total: all.length, dir: absDir, samples, isAudio: true });
 }
 
+function previewDocumentCollection(req, res) {
+  const { dir } = req.body;
+  const absDir = path.resolve(dir);
+  let stat;
+  try { stat = fs.statSync(absDir); } catch { return res.status(404).json({ error: 'Directory not found' }); }
+  if (!stat.isDirectory()) return res.status(400).json({ error: 'Path is not a directory' });
+
+  const all = walkDocuments(absDir);
+  const samples = all.slice(0, 50).map(f => ({
+    name: path.relative(absDir, f).replace(/\\/g, '/'),
+    abs: f,
+  }));
+  res.json({ total: all.length, dir: absDir, samples, isDocument: true });
+}
+
 router.post('/preview', (req, res) => {
   const { dir, mediatypeType } = req.body ?? {};
   if (!dir || typeof dir !== 'string') return res.status(400).json({ error: 'dir is required' });
   switch (mediatypeType) {
     case 2: return previewVideoCollection(req, res);
     case 3: return previewAudioCollection(req, res);
+    case 4: return previewDocumentCollection(req, res);
     case 1:
     default: return previewImageCollection(req, res);
   }
@@ -631,6 +676,33 @@ router.get('/images/:uid', (req, res) => {
   res.json({ total: all.length, page, pageSize, items });
 });
 
+// GET /documents/:uid?page=1&pageSize=200
+// Lists all documents in a media's folder, sorted by path, paginated.
+// Returns { total, page, pageSize, items: [{rel, name, ext}] }
+router.get('/documents/:uid', (req, res) => {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT m.path AS mediaPath, ms.path AS sourcePath
+    FROM medias m
+    JOIN mediasources ms ON ms.id = m.mediasource_id
+    WHERE m.uid = ?
+  `).get(req.params.uid);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+
+  const absDir = path.resolve(path.join(row.sourcePath, row.mediaPath));
+  const all = walkDocuments(absDir).map(f => {
+    const rel = path.relative(absDir, f).replace(/\\/g, '/');
+    return { rel, name: path.basename(f), ext: path.extname(f).toLowerCase() };
+  });
+
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const pageSize = Math.min(1000, Math.max(1, parseInt(req.query.pageSize, 10) || 200));
+  const offset = (page - 1) * pageSize;
+  const items = all.slice(offset, offset + pageSize);
+
+  res.json({ total: all.length, page, pageSize, items });
+});
+
 // GET /file/:uid/*  — serves any file within the media's folder by relative path
 router.get('/file/:uid/*', (req, res) => {
   const db = getDb();
@@ -650,6 +722,41 @@ router.get('/file/:uid/*', (req, res) => {
   if (!absFile.startsWith(absDir + path.sep) && absFile !== absDir) return res.status(403).end();
   if (!IMAGE_EXTS.has(path.extname(absFile).toLowerCase())) return res.status(400).end();
   if (!fs.existsSync(absFile)) return res.status(404).end();
+  res.sendFile(absFile);
+});
+
+// GET /docfile/:uid/*  — serves a document file from a media's folder
+router.get('/docfile/:uid/*', (req, res) => {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT m.path AS mediaPath, ms.path AS sourcePath
+    FROM medias m
+    JOIN mediasources ms ON ms.id = m.mediasource_id
+    WHERE m.uid = ?
+  `).get(req.params.uid);
+  if (!row) return res.status(404).end();
+
+  const rel = req.params[0] || '';
+  const absDir = path.resolve(path.join(row.sourcePath, row.mediaPath));
+  const absFile = path.resolve(path.join(absDir, rel));
+
+  // Path traversal guard
+  if (!absFile.startsWith(absDir + path.sep) && absFile !== absDir) return res.status(403).end();
+  if (!DOCUMENT_EXTS.has(path.extname(absFile).toLowerCase())) return res.status(400).end();
+  if (!fs.existsSync(absFile)) return res.status(404).end();
+
+  const ext = path.extname(absFile).toLowerCase();
+  if (ext === '.pdf') {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline');
+  } else if (ext === '.docx') {
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(absFile)}"`);
+  } else {
+    // .txt, .md, .rst — serve as plain text inline
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline');
+  }
   res.sendFile(absFile);
 });
 
@@ -869,6 +976,7 @@ router.post('/save', (req, res) => {
     case 3:
       populateAudiofiles(newUid, destDir);
       break;
+    case 4: indexDocumentCollection(newUid, destDir); break;
   }
 });
 

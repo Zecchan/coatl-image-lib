@@ -7,11 +7,11 @@
         <label class="field-label">Folder Path <span class="req">*</span></label>
         <input v-model="form.path" type="text" class="field" placeholder="relative to media source root" />
       </div>
-      <!-- Video Collection: cover auto-generated from first frame; Music Collection: optional upload -->
+      <!-- Video Collection: cover auto-generated from first frame; Music/Document Collection: optional upload -->
       <template v-if="mediatypeType !== 2">
         <div class="field-group flex-1">
           <label class="field-label">Cover Image</label>
-          <template v-if="mediatypeType === 3">
+          <template v-if="mediatypeType === 3 || mediatypeType === 4">
             <label class="cover-upload-btn">
               <input type="file" accept="image/*" style="display:none" @change="onCoverFileChange" />
               <span>{{ coverFileName || 'Choose image… (optional)' }}</span>
@@ -28,8 +28,8 @@
     <div class="modal-row">
       <div class="field-group flex-1">
         <label class="field-label">Cover Image</label>
-        <!-- Video / Music: file upload; will be saved as cover.jpg on the server -->
-        <template v-if="mediatypeType === 2 || mediatypeType === 3">
+        <!-- Video / Music / Document: file upload; will be saved as cover.jpg on the server -->
+        <template v-if="mediatypeType === 2 || mediatypeType === 3 || mediatypeType === 4">
           <label class="cover-upload-btn">
             <input type="file" accept="image/*" style="display:none" @change="onCoverFileChange" />
             <span>{{ coverFileName || 'Choose image…' }}</span>

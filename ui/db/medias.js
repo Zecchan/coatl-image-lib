@@ -439,6 +439,47 @@ router.post('/:uid/reindex', async (req, res) => {
     } catch (e) {
       console.warn('[qdrant] reindex video failed:', e.message);
     }
+  } else if (row.mediatypeType === 4) {
+    // Document collection
+    const DOCUMENT_EXTS = new Set(['.txt', '.md', '.rst', '.docx', '.pdf']);
+    function walkDocs(dir) {
+      const results = [];
+      function walk(current) {
+        let entries; try { entries = require('fs').readdirSync(current, { withFileTypes: true }); } catch { return; }
+        entries.sort((a, b) => a.name.localeCompare(b.name));
+        for (const e of entries) {
+          const full = path.join(current, e.name);
+          if (e.isDirectory()) walk(full);
+          else if (e.isFile() && DOCUMENT_EXTS.has(path.extname(e.name).toLowerCase())) results.push(full);
+        }
+      }
+      walk(dir);
+      return results;
+    }
+    const docPaths = walkDocs(absDir);
+    res.status(202).json({ ok: true, queued: docPaths.length });
+    if (!docPaths.length) return;
+    const maxChunks = getConfig().embedding?.maxTextChunksPerCollection || 500;
+    const documents = docPaths.map(f => ({
+      abs_path: f,
+      rel_path: path.relative(absDir, f).replace(/\\/g, '/'),
+    }));
+    try {
+      const r = await fetch(`http://127.0.0.1:${apiPort}/index_documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ media_uid: req.params.uid, documents, max_chunks: maxChunks }),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        if ((data.indexed ?? 0) > 0) {
+          db.prepare("UPDATE medias SET qdrant_indexed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE uid = ?")
+            .run(req.params.uid);
+        }
+      }
+    } catch (e) {
+      console.warn('[qdrant] reindex documents failed:', e.message);
+    }
   } else {
     // Image collection
     const imagePaths = walkImages(absDir);

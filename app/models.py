@@ -50,6 +50,18 @@ class LyricsIndexRequest(BaseModel):
     text: str
 
 
+class DocumentFileInfo(BaseModel):
+    abs_path: str
+    rel_path: str
+
+
+class DocumentIndexRequest(BaseModel):
+    media_uid: str
+    documents: List[DocumentFileInfo]
+    chunk_size: Optional[int] = 200
+    max_chunks: Optional[int] = 500
+
+
 class TextSearchRequest(BaseModel):
     text: str
     limit: Optional[int] = 20

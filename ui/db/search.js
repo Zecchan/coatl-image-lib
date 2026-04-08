@@ -153,11 +153,15 @@ router.post('/', async (req, res) => {
   // RRF merge
   const merged = rrfMerge(imageHits, textHits);
 
-  // Build lookup for audiofile titles from textHits
+  // Build lookup for audiofile titles and document paths from textHits
   const audiofileUidByMedia = {};  // media_uid → audiofile_uid (best match)
+  const documentPathByMedia = {};  // media_uid → document_path (best match)
   for (const h of textHits) {
     if (h.media_uid && h.audiofile_uid && !audiofileUidByMedia[h.media_uid]) {
       audiofileUidByMedia[h.media_uid] = h.audiofile_uid;
+    }
+    if (h.media_uid && h.document_path && !documentPathByMedia[h.media_uid]) {
+      documentPathByMedia[h.media_uid] = h.document_path;
     }
   }
 
@@ -176,7 +180,7 @@ router.post('/', async (req, res) => {
   ]));
   withTags.sort((a, b) => (rrfScoreMap[b.uid] ?? 0) - (rrfScoreMap[a.uid] ?? 0));
 
-  // Attach audiofile title for music matches
+  // Attach audiofile title or document filename for text matches
   const afStmt = db.prepare('SELECT title, filename FROM audiofiles WHERE uid = ?');
   const results = withTags.map(r => {
     const afUid = audiofileUidByMedia[r.uid];
@@ -184,6 +188,9 @@ router.post('/', async (req, res) => {
     if (afUid) {
       const af = afStmt.get(afUid);
       if (af) matchedTrack = af.title || af.filename;
+    } else if (documentPathByMedia[r.uid]) {
+      const { basename } = require('path');
+      matchedTrack = basename(documentPathByMedia[r.uid]);
     }
     return { ...r, semanticScore: rawScoreMap[r.uid] ?? 0, matchedTrack };
   });

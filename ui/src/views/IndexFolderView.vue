@@ -47,9 +47,9 @@
     <template v-if="result">
       <p class="results-meta">
         Found <strong>{{ result.total }}</strong>
-        {{ result.isAudio ? 'audio file' : result.isVideo ? 'video' : 'image' }}{{ result.total === 1 ? '' : 's' }} in
+        {{ result.isDocument ? 'document' : result.isAudio ? 'audio file' : result.isVideo ? 'video' : 'image' }}{{ result.total === 1 ? '' : 's' }} in
         <code>{{ result.dir }}</code>
-        <span v-if="!result.isAudio && result.total > 12"> — showing {{ result.samples.length }} samples</span>
+        <span v-if="!result.isAudio && !result.isDocument && result.total > 12"> — showing {{ result.samples.length }} samples</span>
       </p>
 
       <!-- Audio file list -->
@@ -62,8 +62,18 @@
         </div>
       </div>
 
+      <!-- Document file list -->
+      <div v-else-if="result.isDocument && result.samples.length" class="audio-file-list">
+        <div v-for="f in result.samples" :key="f.name" class="audio-file-row">
+          <span class="audio-file-name">{{ f.name }}</span>
+        </div>
+        <div v-if="result.total > result.samples.length" class="audio-file-more">
+          … and {{ result.total - result.samples.length }} more
+        </div>
+      </div>
+
       <!-- Image/video grid -->
-      <div v-else-if="!result.isAudio && result.samples.length" class="preview-grid">
+      <div v-else-if="!result.isAudio && !result.isDocument && result.samples.length" class="preview-grid">
         <div v-for="(img, i) in result.samples" :key="img.abs" class="preview-item">
           <div class="preview-img-wrap">
             <img :src="imgUrl(img.abs)" :alt="img.name" class="preview-img" loading="lazy" />
@@ -73,10 +83,10 @@
         </div>
       </div>
 
-      <p v-else class="empty-hint">No {{ result.isAudio ? 'audio files' : result.isVideo ? 'videos' : 'images' }} found in that path.</p>
+      <p v-else class="empty-hint">No {{ result.isDocument ? 'documents' : result.isAudio ? 'audio files' : result.isVideo ? 'videos' : 'images' }} found in that path.</p>
 
       <!-- Tagging analysis (images/video only) -->
-      <div v-if="!result.isAudio && tagging" class="analysis-card" style="margin-top:1.25rem">
+      <div v-if="!result.isAudio && !result.isDocument && tagging" class="analysis-card" style="margin-top:1.25rem">
         <div style="display:flex;align-items:center;gap:.5rem;color:#555570;font-size:.82rem">
           <RotateCw :size="13" class="spin" />
           Analyzing {{ taggingCount }} samples with WD14…
@@ -157,7 +167,7 @@
 import { ref, computed, onMounted, reactive } from 'vue'
 import { ChevronLeft, ChevronDown, FolderOpen, Search, RotateCw, Save } from 'lucide-vue-next'
 import { API_BASE } from '../api.js'
-import { MEDIA_TYPE_IMAGE_COLLECTION, MEDIA_TYPE_VIDEO_COLLECTION, MEDIA_TYPE_MUSIC_COLLECTION } from '../mediatypeEnum.js'
+import { MEDIA_TYPE_IMAGE_COLLECTION, MEDIA_TYPE_VIDEO_COLLECTION, MEDIA_TYPE_MUSIC_COLLECTION, MEDIA_TYPE_DOCUMENT_COLLECTION } from '../mediatypeEnum.js'
 import MediaEntryForm from '../components/MediaEntryForm.vue'
 
 const sources           = ref([])
@@ -244,7 +254,7 @@ async function load() {
     result.value = data
     loadedDir.value = scanPath.value.trim()
     // Skip WD14 tagging for non-image types
-    if (data.samples.length && !data.isAudio) runTagging(data.samples)
+    if (data.samples.length && !data.isAudio && !data.isDocument) runTagging(data.samples)
   } catch (e) {
     error.value = e.message
   } finally {
@@ -339,10 +349,10 @@ function openSave() {
     ? Object.entries(tagResult.value.ratings).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'general'
     : 'general'
 
-  // Cover: video → auto-generated; music → blank (user may optionally upload); image → first sample
+  // Cover: video → auto-generated; music/document → blank (user may optionally upload); image → first sample
   const cover = selectedSourceType.value === MEDIA_TYPE_VIDEO_COLLECTION
     ? 'cover.jpg'
-    : selectedSourceType.value === MEDIA_TYPE_MUSIC_COLLECTION
+    : (selectedSourceType.value === MEDIA_TYPE_MUSIC_COLLECTION || selectedSourceType.value === MEDIA_TYPE_DOCUMENT_COLLECTION)
       ? ''
       : (result.value?.samples?.[0]?.name ?? '')
 
@@ -356,7 +366,7 @@ function openSave() {
   const page_count = selectedSourceType.value === MEDIA_TYPE_IMAGE_COLLECTION
     ? (result.value?.total ?? null)
     : null
-  const track_count = (selectedSourceType.value === MEDIA_TYPE_VIDEO_COLLECTION || selectedSourceType.value === MEDIA_TYPE_MUSIC_COLLECTION)
+  const track_count = (selectedSourceType.value === MEDIA_TYPE_VIDEO_COLLECTION || selectedSourceType.value === MEDIA_TYPE_MUSIC_COLLECTION || selectedSourceType.value === MEDIA_TYPE_DOCUMENT_COLLECTION)
     ? (result.value?.total ?? null)
     : null
 

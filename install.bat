@@ -24,7 +24,7 @@ call .venv\Scripts\activate
 
 echo Installing dependencies...
 pip install --upgrade pip
-pip install fastapi uvicorn pillow imagehash numpy torch torchvision open_clip_torch transformers pandas huggingface_hub onnxscript qdrant-client
+pip install fastapi uvicorn pillow imagehash numpy torch torchvision open_clip_torch transformers pandas huggingface_hub onnxscript qdrant-client sentence-transformers python-docx pymupdf
 
 echo.
 echo Select GPU backend for ONNX Runtime:

@@ -148,7 +148,7 @@
 
     <!-- Media grid -->
     <div v-if="medias.length" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem">
-      <div v-for="m in medias" :key="m.uid" class="media-card" :style="m.mediatypeColor ? `border-color:${m.mediatypeColor}` : ''" @click="router.push(`/media/${m.uid}`)">
+      <RouterLink v-for="m in medias" :key="m.uid" :to="`/media/${m.uid}`" class="media-card" :style="m.mediatypeColor ? `border-color:${m.mediatypeColor}` : ''">
         <!-- Cover -->
         <div class="cover-wrap">
           <img
@@ -164,7 +164,7 @@
           <!-- Content rating badge -->
           <span class="cr-badge" :class="`cr-${m.content_rating}`">{{ m.content_rating }}</span>
           <!-- Favorite toggle -->
-          <button class="fav-btn" :class="{ active: m.is_favorite }" :title="m.is_favorite ? 'Remove from favorites' : 'Add to favorites'" @click.stop="toggleFavorite(m, $event)"><Star :size="13" /></button>
+          <button class="fav-btn" :class="{ active: m.is_favorite }" :title="m.is_favorite ? 'Remove from favorites' : 'Add to favorites'" @click.prevent.stop="toggleFavorite(m, $event)"><Star :size="13" /></button>
           <!-- Embedded in Qdrant indicator -->
           <span v-if="m.qdrant_indexed_at" class="embed-badge" title="Embedded for semantic search"><Zap :size="11" /></span>
           <!-- Semantic similarity score -->
@@ -189,7 +189,7 @@
             >{{ t.name }}</span>
           </div>
         </div>
-      </div>
+      </RouterLink>
     </div>
 
     <!-- Bottom pagination -->
@@ -633,6 +633,9 @@ code { background: #1e1e30; border-radius: 3px; padding: 0 .35em; font-size: .88
 
 /* Media card */
 .media-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
   background: #181820;
   border: 1px solid #252535;
   border-radius: 10px;

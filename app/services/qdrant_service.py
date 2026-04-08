@@ -45,8 +45,8 @@ class QdrantService:
                 vectors_config=VectorParams(size=VECTOR_DIM, distance=Distance.COSINE),
             )
 
-    def index_media(self, media_uid: str, image_paths: List[str]) -> int:
-        """Embed up to MAX_IMAGES_PER_MEDIA images and upsert into Qdrant.
+    def index_media(self, media_uid: str, image_paths: List[str], max_images: int = None) -> int:
+        """Embed up to max_images images and upsert into Qdrant.
         
         Points are identified by a deterministic integer ID derived from
         (media_uid, image index) so re-indexing is idempotent.
@@ -54,10 +54,11 @@ class QdrantService:
         """
         self.ensure_collection()
         client = self._get_client()
+        limit = max_images if max_images else MAX_IMAGES_PER_MEDIA
 
         # Sample if too many images
-        if len(image_paths) > MAX_IMAGES_PER_MEDIA:
-            image_paths = random.sample(image_paths, MAX_IMAGES_PER_MEDIA)
+        if len(image_paths) > limit:
+            image_paths = random.sample(image_paths, limit)
 
         # Delete existing points for this media before re-indexing
         client.delete(
@@ -149,15 +150,16 @@ class QdrantService:
         hits.sort(key=lambda x: x["score"], reverse=True)
         return hits[:limit]
 
-    def index_video_media(self, media_uid: str, video_paths: List[str]) -> int:
+    def index_video_media(self, media_uid: str, video_paths: List[str], max_images: int = None) -> int:
         """Extract frames from videos and index their CLIP embeddings into Qdrant.
 
         Strategy: at least 1 frame per video, distributing the total budget of
-        MAX_IMAGES_PER_MEDIA across all videos evenly (ceil division).
+        max_images across all videos evenly (ceil division).
         Timestamps are evenly spaced across 10%–90% of each video's duration.
         """
         self.ensure_collection()
         client = self._get_client()
+        limit = max_images if max_images else MAX_IMAGES_PER_MEDIA
 
         client.delete(
             collection_name=COLLECTION_NAME,
@@ -172,7 +174,7 @@ class QdrantService:
         if not n_videos:
             return 0
 
-        frames_per_video = max(1, math.ceil(MAX_IMAGES_PER_MEDIA / n_videos))
+        frames_per_video = max(1, math.ceil(limit / n_videos))
 
         points: List[PointStruct] = []
         point_idx = 0

@@ -23,6 +23,7 @@ class AnalyzeRequest(BaseModel):
 class IndexRequest(BaseModel):
     media_uid: str
     image_paths: List[str]
+    max_images: Optional[int] = None
 
 
 class SearchRequest(BaseModel):
@@ -40,6 +41,7 @@ class ImageSearchRequest(BaseModel):
 class VideoIndexRequest(BaseModel):
     media_uid: str
     video_paths: List[str]
+    max_images: Optional[int] = None
 
 
 class LyricsIndexRequest(BaseModel):

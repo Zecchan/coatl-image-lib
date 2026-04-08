@@ -76,14 +76,14 @@ def analyze(req: AnalyzeRequest):
 # INDEX MEDIA IMAGES INTO QDRANT
 @app.post("/index_media")
 def index_media(req: IndexRequest):
-    count = qdrant_service.index_media(req.media_uid, req.image_paths)
+    count = qdrant_service.index_media(req.media_uid, req.image_paths, req.max_images)
     return {"indexed": count, "media_uid": req.media_uid}
 
 
 # INDEX VIDEO COLLECTION INTO QDRANT (extracts frames via ffmpeg internally)
 @app.post("/index_video")
 def index_video(req: VideoIndexRequest):
-    count = qdrant_service.index_video_media(req.media_uid, req.video_paths)
+    count = qdrant_service.index_video_media(req.media_uid, req.video_paths, req.max_images)
     return {"indexed": count, "media_uid": req.media_uid}
 
 

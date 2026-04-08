@@ -4,7 +4,12 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const Router = express.Router;
-const { getDb, uid } = require('./schema');
+const { getDb, uid } = require('./schema')
+
+const CONFIG_PATH = path.join(__dirname, '..', 'serverconfig.json');
+function getConfig() {
+  try { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch { return {}; }
+};
 
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif', '.avif']);
 
@@ -422,7 +427,7 @@ router.post('/:uid/reindex', async (req, res) => {
       const r = await fetch(`http://127.0.0.1:${apiPort}/index_video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ media_uid: req.params.uid, video_paths: videoPaths }),
+        body: JSON.stringify({ media_uid: req.params.uid, video_paths: videoPaths, max_images: getConfig().embedding?.maxImagesPerMedia || 200 }),
       });
       if (r.ok) {
         const data = await r.json();
@@ -443,7 +448,7 @@ router.post('/:uid/reindex', async (req, res) => {
       const r = await fetch(`http://127.0.0.1:${apiPort}/index_media`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ media_uid: req.params.uid, image_paths: imagePaths }),
+        body: JSON.stringify({ media_uid: req.params.uid, image_paths: imagePaths, max_images: getConfig().embedding?.maxImagesPerMedia || 200 }),
       });
       if (r.ok) {
         db.prepare("UPDATE medias SET qdrant_indexed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE uid = ?")

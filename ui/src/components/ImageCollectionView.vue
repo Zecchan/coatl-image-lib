@@ -69,7 +69,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import ImageViewer from './ImageViewer.vue'
 
 const props = defineProps({
@@ -110,6 +110,7 @@ const pageNumbers = computed(() => {
 const viewerOpen = ref(false)
 const viewerSrc  = ref('')
 const viewerAlt  = ref('')
+const viewerIdx  = ref(0)
 
 function imgSrc(rel) {
   // rel is a forward-slash path like "001.jpg" or "sub/001.jpg"
@@ -145,11 +146,54 @@ function onPageSizeChange() {
 }
 
 function openViewer(idx) {
-  const img    = images.value[idx]
+  viewerIdx.value  = idx
+  const img        = images.value[idx]
   viewerSrc.value  = imgSrc(img.rel)
   viewerAlt.value  = img.rel.split('/').pop()
   viewerOpen.value = true
 }
+
+async function navigateViewer(delta) {
+  const next = viewerIdx.value + delta
+  if (next >= 0 && next < images.value.length) {
+    viewerIdx.value = next
+    const img       = images.value[next]
+    viewerSrc.value = imgSrc(img.rel)
+    viewerAlt.value = img.rel.split('/').pop()
+  } else if (delta < 0 && page.value > 1) {
+    page.value--
+    await fetchImages()
+    const idx       = images.value.length - 1
+    viewerIdx.value = idx
+    const img       = images.value[idx]
+    viewerSrc.value = imgSrc(img.rel)
+    viewerAlt.value = img.rel.split('/').pop()
+  } else if (delta > 0 && page.value < totalPages.value) {
+    page.value++
+    await fetchImages()
+    viewerIdx.value = 0
+    const img       = images.value[0]
+    viewerSrc.value = imgSrc(img.rel)
+    viewerAlt.value = img.rel.split('/').pop()
+  }
+}
+
+function onViewerKey(e) {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    navigateViewer(-1)
+  } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+    e.preventDefault()
+    navigateViewer(1)
+  }
+}
+
+watch(viewerOpen, v => {
+  if (v) window.addEventListener('keydown', onViewerKey)
+  else   window.removeEventListener('keydown', onViewerKey)
+})
+
+onUnmounted(() => window.removeEventListener('keydown', onViewerKey))
 
 onMounted(fetchImages)
 </script>
@@ -177,7 +221,7 @@ onMounted(fetchImages)
   transition: border-color .15s, transform .15s;
 }
 .img-tile:hover { border-color: #7c5cbf; transform: translateY(-2px); }
-.img-tile-img  { width: 100%; aspect-ratio: 1/1; object-fit: cover; display: block; }
+.img-tile-img  { width: 100%; aspect-ratio: 1/1; object-fit: contain; display: block; }
 .img-tile-name {
   padding: .3rem .45rem;
   font-size: .6rem; color: #444460;

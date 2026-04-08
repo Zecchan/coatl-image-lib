@@ -68,6 +68,22 @@
       </div>
     </section>
 
+    <!-- Embedding -->
+    <section class="section-card">
+      <h3 class="section-title">
+        <Cpu :size="14" style="color:#c084fc" /> Embedding
+      </h3>
+      <div class="field-row">
+        <label class="field-label">Image Embedding Limit</label>
+        <input v-model.number="form.embedding.maxImagesPerMedia" type="number" class="field" min="1" max="10000" style="max-width:120px" />
+        <span class="field-hint">Maximum number of images indexed per image collection. Higher values improve search recall but increase processing time and Qdrant storage.</span>
+      </div>
+      <div class="note-box">
+        <Info :size="13" style="flex-shrink:0;margin-top:2px" />
+        <span>When a collection has more images than the limit, a random sample is taken. Default: 200. Re-indexing is required for changes to take effect on existing collections.</span>
+      </div>
+    </section>
+
     <!-- Actions -->
     <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-bottom:.5rem">
       <button class="btn-secondary" @click="loadConfig">
@@ -94,13 +110,14 @@
 import { reactive, onMounted } from 'vue'
 import {
   SlidersHorizontal, Globe, HardDrive, Network,
-  Info, RotateCcw, Save, CheckCircle, XCircle,
+  Info, RotateCcw, Save, CheckCircle, XCircle, Cpu,
 } from 'lucide-vue-next'
 
 const form = reactive({
-  site:   { title: '' },
-  sqlite: { path: '' },
-  qdrant: { host: '', port: 6333, collectionName: '', textCollectionName: '' },
+  site:      { title: '' },
+  sqlite:    { path: '' },
+  qdrant:    { host: '', port: 6333, collectionName: '', textCollectionName: '' },
+  embedding: { maxImagesPerMedia: 200 },
 })
 
 const toast = reactive({ visible: false, msg: '', type: 'ok' })
@@ -121,6 +138,7 @@ async function loadConfig() {
     form.qdrant.port               = cfg.qdrant?.port               ?? 6333
     form.qdrant.collectionName     = cfg.qdrant?.collectionName     || ''
     form.qdrant.textCollectionName = cfg.qdrant?.textCollectionName || ''
+    form.embedding.maxImagesPerMedia = cfg.embedding?.maxImagesPerMedia ?? 200
   } catch (e) {
     showToast('Failed to load config: ' + e.message, 'err')
   }
@@ -135,6 +153,9 @@ async function saveConfig() {
       port:           Number(form.qdrant.port)          || 6333,
       collectionName:     form.qdrant.collectionName.trim()     || 'coatl_images',
       textCollectionName: form.qdrant.textCollectionName.trim() || 'coatl_text',
+    },
+    embedding: {
+      maxImagesPerMedia: Math.max(1, Math.round(Number(form.embedding.maxImagesPerMedia) || 200)),
     },
   }
   try {

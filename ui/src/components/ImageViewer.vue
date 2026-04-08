@@ -48,13 +48,14 @@ const isDragging   = ref(false)
 const dragStart    = ref({ x: 0, y: 0, tx: 0, ty: 0 })
 const containerRef = ref(null)
 const imgRef       = ref(null)
+const imgVisible   = ref(false)
 
 const MIN_SCALE = 0.5
 const MAX_SCALE = 8
 
 // ── Reset when opening / src changes ─────────────────────────────────────────
-watch(() => props.modelValue, v => { if (v) reset() })
-watch(() => props.src,        ()  => { if (props.modelValue) reset() })
+watch(() => props.modelValue, v => { if (v) { reset(); imgVisible.value = false } })
+watch(() => props.src,        ()  => { if (props.modelValue) imgVisible.value = false })
 
 function reset() {
   scale.value      = 1
@@ -62,13 +63,32 @@ function reset() {
   translateY.value = 0
 }
 
-function onImgLoad() { reset() }
+function fitToContainer() {
+  const img       = imgRef.value
+  const container = containerRef.value
+  if (!img || !container) return
+  const W = img.naturalWidth
+  const H = img.naturalHeight
+  if (!W || !H) return
+  const cW = container.clientWidth
+  const cH = container.clientHeight
+  const fitScale = Math.min(cW / W, cH / H, 1)
+  scale.value      = fitScale
+  // Re-center: with transformOrigin '0 0', flexbox already centers the natural-size image.
+  // After scaling by fitScale the image shifts toward origin; compensate to keep it centered.
+  translateX.value = (W / 2) * (1 - fitScale)
+  translateY.value = (H / 2) * (1 - fitScale)
+  imgVisible.value = true
+}
+
+function onImgLoad() { fitToContainer() }
 
 // ── Computed transform ────────────────────────────────────────────────────────
 const imgStyle = computed(() => ({
   transform:       `translate(${translateX.value}px, ${translateY.value}px) scale(${scale.value})`,
   transformOrigin: '0 0',
   cursor:          isDragging.value ? 'grabbing' : 'grab',
+  opacity:         imgVisible.value ? 1 : 0,
 }))
 
 // ── Zoom on scroll ────────────────────────────────────────────────────────────

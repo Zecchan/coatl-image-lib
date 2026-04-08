@@ -6,7 +6,12 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const Router = require('express').Router;
-const { getDb, uid } = require('./schema');
+const { getDb, uid } = require('./schema')
+
+const CONFIG_PATH = path.join(__dirname, '..', 'serverconfig.json');
+function getConfig() {
+  try { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch { return {}; }
+};
 
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif', '.avif']);
 const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.webm', '.avi', '.mov', '.wmv', '.flv', '.m4v', '.ts', '.m2ts']);
@@ -187,10 +192,11 @@ function indexImageCollection(newUid, destDir) {
   const imagePaths = walkImages(destDir);
   if (!imagePaths.length) return;
   const apiPort = parseInt(process.env.API_PORT) || 8000;
+  const maxImages = getConfig().embedding?.maxImagesPerMedia || 200;
   fetch(`http://127.0.0.1:${apiPort}/index_media`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ media_uid: newUid, image_paths: imagePaths }),
+    body: JSON.stringify({ media_uid: newUid, image_paths: imagePaths, max_images: maxImages }),
   }).then(r => {
     if (r.ok) {
       getDb().prepare("UPDATE medias SET qdrant_indexed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE uid = ?")
@@ -203,10 +209,11 @@ function indexVideoCollection(newUid, destDir) {
   const videoPaths = walkVideos(destDir);
   if (!videoPaths.length) return;
   const apiPort = parseInt(process.env.API_PORT) || 8000;
+  const maxImages = getConfig().embedding?.maxImagesPerMedia || 200;
   fetch(`http://127.0.0.1:${apiPort}/index_video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ media_uid: newUid, video_paths: videoPaths }),
+    body: JSON.stringify({ media_uid: newUid, video_paths: videoPaths, max_images: maxImages }),
   }).then(async r => {
     if (r.ok) {
       const data = await r.json();

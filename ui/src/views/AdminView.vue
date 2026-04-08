@@ -51,8 +51,8 @@
       <!-- Index Folder -->
       <div class="card card-link" @click="$router.push('/indexfolder')">
         <FolderPlus :size="26" style="color:#60a5fa;margin-bottom:.75rem" />
-        <h3 class="card-title">Index Folder</h3>
-        <p class="card-desc">Scan a folder and add all images — embeddings, hashes, captions, and tags.</p>
+        <h3 class="card-title">Add Media</h3>
+        <p class="card-desc">Scan a folder and add a media collection — images, videos, or music.</p>
         <span style="font-size:.78rem;color:#60a5fa;display:flex;align-items:center;gap:.3rem">
           <ArrowRight :size="13" /> Open
         </span>

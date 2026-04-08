@@ -229,7 +229,7 @@ const total      = ref(0)
 const page       = ref(1)
 const pageSize   = ref(25)
 const emptyTitle = ref('No media indexed yet')
-const emptyMsg   = ref('Go to <a href="/admin">Administration</a> to index your image folders.')
+const emptyMsg   = ref('Go to <a href="/admin">Administration</a> to add your media collections.')
 
 // ── Search mode ───────────────────────────────────────────────────────────────
 const searchMode  = ref('keyword') // 'keyword' | 'semantic'
@@ -440,7 +440,7 @@ async function runSemanticFetch() {
     total.value  = data.results.length
     if (!data.results.length) {
       emptyTitle.value = `No semantic matches for "${text}"`
-      emptyMsg.value   = 'Try different keywords or make sure images have been indexed.'
+      emptyMsg.value   = 'Try different keywords or make sure collections have been indexed.'
     }
   } catch {
     medias.value = []

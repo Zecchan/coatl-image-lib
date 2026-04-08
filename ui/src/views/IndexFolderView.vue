@@ -8,7 +8,7 @@
           <ChevronLeft :size="15" />
         </button>
         <FolderOpen :size="17" style="color:#555570" />
-        <span>Index Folder</span>
+        <span>Add Media</span>
       </div>
     </div>
 
